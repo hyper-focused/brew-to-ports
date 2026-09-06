@@ -37,7 +37,7 @@ It does **not** silently rewrite your machine.
 ./migrate.sh                     # print what would happen
 ./migrate.sh --apply             # actually install ports / uninstall brew formulae
 
-PATH advice follows `source` / `.` includes under `$HOME` (`.zshenv`, `.zsh_path`, …), not Homebrew/antidote plugin trees. If PATH is a zsh `path=(...)` array, the suggestion is an array patch for that owner file — not a naive `export PATH=`. It still will not edit those files.
+PATH advice follows `source` / `.` includes under `$HOME`. `--script` / `--path-file` dumps a replacement file (`~/.zsh_path.brew-to-ports` by default, one directory per line). The report lists exact `source` / `export PATH` / `brew shellenv` lines to comment out, then a zsh `path=( ${(f)"$(< file)"} )` or bash `PATH=$(paste …)` load. It still will not edit rc files.
 ```
 
 ## Layout

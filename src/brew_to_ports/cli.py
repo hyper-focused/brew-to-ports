@@ -17,7 +17,7 @@ from brew_to_ports.catalog import Catalog, from_portindex_text
 from brew_to_ports.classify import classify_all
 from brew_to_ports.config_scan import scan_configs
 from brew_to_ports.inventory import from_brew_json
-from brew_to_ports.path_suggest import suggest_path
+from brew_to_ports.path_suggest import default_path_file, suggest_path
 from brew_to_ports.plan import build_plan
 from brew_to_ports.render.commands import render_commands
 from brew_to_ports.render.report import render_report
@@ -68,6 +68,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="allow running under Homebrew's Python (not recommended)",
     )
     parser.add_argument("--commands", action="store_true", help="print copy/paste commands after the report")
+    parser.add_argument(
+        "--path-file",
+        nargs="?",
+        const=str(default_path_file()),
+        metavar="FILE",
+        help="write generated PATH file (default ~/.zsh_path.brew-to-ports). Also written with --script.",
+    )
     return parser
 
 
@@ -93,6 +100,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     else:
         catalog = load_catalog()
 
+    dest = Path(args.path_file).expanduser() if args.path_file else default_path_file()
     plan = run_scan(
         payload,
         catalog,
@@ -101,6 +109,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         macos=macos_version(),
         brew_pfx=brew_prefix(),
         ports_pfx=ports_prefix(),
+        path_file=dest,
     )
     report = render_report(plan)
     sys.stdout.write(report)
@@ -114,6 +123,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         script_path.write_text(render_script(plan), encoding="utf-8")
         script_path.chmod(script_path.stat().st_mode | 0o111)
         print(f"\nwrote {script_path} (dry-run by default; pass --apply to mutate)", file=sys.stderr)
+    if args.script or args.path_file:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(plan.path_advice.path_file_contents if plan.path_advice else "", encoding="utf-8")
+        print(f"wrote {dest} (PATH data file — comment rc writers and load it)", file=sys.stderr)
     return 0
 
 
@@ -128,6 +141,7 @@ def run_scan(
     ports_pfx: str = "/opt/local",
     path_env: Optional[str] = None,
     rc_files=None,
+    path_file: Optional[Path] = None,
 ) -> "Plan":
     packages = from_brew_json(payload)
     decisions = classify_all(packages, catalog, allow_older_same_major=allow_older_same_major)
@@ -147,6 +161,7 @@ def run_scan(
         rc_files if rc_files is not None else read_rc_files(),
         brew_prefix=brew_pfx,
         ports_prefix=ports_pfx,
+        path_file=path_file,
     )
     return plan
 

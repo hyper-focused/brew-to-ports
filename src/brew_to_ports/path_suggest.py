@@ -6,7 +6,8 @@ import re
 from pathlib import Path
 from typing import List, Sequence, Tuple
 
-from brew_to_ports.models import PathAdvice
+from brew_to_ports.adapters.shell_env import sourced_paths
+from brew_to_ports.models import PathAdvice, PathLine
 
 INTEL_BREW_BIN = "/usr/local/bin"
 INTEL_BREW_SBIN = "/usr/local/sbin"
@@ -25,12 +26,19 @@ _LINKER_RE = re.compile(
 _MACPORTS_INSTALLER_RE = re.compile(r"MacPorts Installer addition")
 
 
+def default_path_file(home: Path | None = None) -> Path:
+    return (home or Path.home()) / ".zsh_path.brew-to-ports"
+
+
 def suggest_path(
     current_path: str,
     rc_files: Sequence[Tuple[Path, str]] | None = None,
     brew_prefix: str = "/usr/local",
     ports_prefix: str = "/opt/local",
+    path_file: Path | None = None,
+    home: Path | None = None,
 ) -> PathAdvice:
+    home = home or Path.home()
     entries = [_norm_entry(p) for p in current_path.split(":") if p]
     ports_bin = f"{ports_prefix}/bin"
     ports_sbin = f"{ports_prefix}/sbin"
@@ -53,7 +61,7 @@ def suggest_path(
     analysis = _analyze_rc(rc_files or [])
 
     notes = [
-        "Do not edit rc files automatically. Paste into the PATH owner file only.",
+        "Do not edit rc files automatically. Comment the listed lines yourself; source the generated path file.",
         "PKG_CONFIG_PATH / LDFLAGS / CPPFLAGS that point at brew prefixes will still see Homebrew libs until you change them.",
         "Includes are followed (source / .) under $HOME only — not Homebrew/antidote plugin trees.",
     ]
@@ -81,7 +89,7 @@ def suggest_path(
     if analysis["path_helper"]:
         notes.append(
             "Login zsh runs /etc/zprofile path_helper BETWEEN .zshenv and .zprofile. "
-            "Re-sourcing the PATH owner from .zprofile (after path_helper / brew shellenv) is the correct pattern — keep it."
+            "Keep a load of the generated path file in .zprofile (after path_helper), not brew shellenv."
         )
     if ARM_BREW_BIN in entries:
         notes.append("PATH contains /opt/homebrew/bin — unexpected on Intel; leaving it in place but MacPorts still goes first.")
@@ -94,6 +102,17 @@ def suggest_path(
             if str(path) in analysis["path_owners"]:
                 array_entries = _rewrite_zsh_array(text, ports_bin, ports_sbin)
                 break
+    if not array_entries:
+        array_entries = [_zsh_path_entry(p) for p in suggested.split(":") if p]
+
+    dest = path_file or default_path_file(home)
+    abs_entries = [_expand_entry(e, home=home) for e in array_entries]
+    path_file_contents = _path_file_contents(abs_entries)
+    comment_out = _comment_out_lines(rc_files or [], analysis["path_owners"], home=home)
+    load_zsh, load_bash = _load_snippets(dest, home=home)
+
+    notes.append(f"Generated PATH file: {dest} (written with --script or --path-file).")
+    notes.append("Comment out the listed source/export/shellenv lines, then load that file from .zshenv and again from .zprofile after path_helper.")
 
     return PathAdvice(
         current_path=current_path,
@@ -107,31 +126,39 @@ def suggest_path(
         alias_hits=analysis["alias_hits"],
         linker_hits=analysis["linker_hits"],
         array_entries=array_entries,
+        path_file=str(dest),
+        path_file_contents=path_file_contents,
+        comment_out=comment_out,
+        load_zsh=load_zsh,
+        load_bash=load_bash,
     )
 
 
 def snippet(advice: PathAdvice) -> str:
-    owners = ", ".join(advice.path_owners) if advice.path_owners else "the PATH owner file"
-    if advice.idiom == "zsh-array":
-        entries = advice.array_entries or [
-            _zsh_path_entry(p) for p in advice.suggested.split(":") if p
-        ]
-        body = "\n".join(f"  {line}" for line in entries)
-        return (
-            f"# brew-to-ports: edit {owners} — you use a zsh path array, not export PATH=\n"
-            "# Keep .zprofile `source ~/.zsh_path` AFTER path_helper / brew shellenv.\n"
-            "# Remove duplicate MacPorts installer `export PATH=` lines if they fight this array.\n"
-            "path=(\n"
-            f"{body}\n"
-            "  $path\n"
-            ")\n"
-            "typeset -gU path\n"
-            "path=( ${^path}(N-/) )\n"
-        )
-    return (
-        f"# brew-to-ports: MacPorts first; leftover Homebrew after. Paste into {owners}.\n"
-        f'export PATH="{advice.suggested}"\n'
-    )
+    """Human instructions: comment detected PATH writers, load the generated file."""
+    lines = [
+        f"# brew-to-ports PATH cutover (does not edit rc files for you)",
+        f"# 1. Review/write {advice.path_file or default_path_file()}",
+        "# 2. Comment out these detected PATH writers:",
+    ]
+    if advice.comment_out:
+        current = None
+        for item in advice.comment_out:
+            if item.path != current:
+                lines.append(f"#    {item.path}")
+                current = item.path
+            lines.append(f"#      {item.lineno}: {item.text}")
+    else:
+        lines.append("#    (none detected)")
+    lines.append("# 3. In their place, load the generated file:")
+    lines.append("#    zsh (.zshenv and again in .zprofile after path_helper):")
+    for raw in (advice.load_zsh or "").splitlines():
+        lines.append(raw)
+    lines.append("#    bash (.profile / .bash_profile):")
+    for raw in (advice.load_bash or "").splitlines():
+        lines.append(raw)
+    lines.append("# Leave the old PATH owner file in place as a backup.")
+    return "\n".join(lines) + "\n"
 
 
 def _analyze_rc(rc_files: Sequence[Tuple[Path, str]]) -> dict:
@@ -224,6 +251,106 @@ def _rewrite_zsh_array(text: str, ports_bin: str, ports_sbin: str) -> List[str]:
             continue
         break
     return cleaned[:insert_at] + [ports_bin, ports_sbin] + cleaned[insert_at:]
+
+
+def _path_file_contents(abs_entries: List[str]) -> str:
+    lines = [
+        "# brew-to-ports generated PATH — one directory per line.",
+        "# Not a script. Load it with the zsh/bash array one-liners from the scan report.",
+        "",
+    ]
+    seen = set()
+    for entry in abs_entries:
+        if not entry or entry in seen:
+            continue
+        seen.add(entry)
+        lines.append(entry)
+    return "\n".join(lines) + "\n"
+
+
+def _load_snippets(dest: Path, home: Path | None = None) -> tuple:
+    loc = str(dest)
+    home_s = str(home or Path.home())
+    if loc.startswith(home_s + "/"):
+        display = "$HOME/" + loc[len(home_s) + 1 :]
+    else:
+        display = loc
+    zsh = (
+        'path=( ${(f)"$(< ' + display + ')"} $path )\n'
+        "typeset -gU path\n"
+        "path=( ${^path}(N-/) )\n"
+    )
+    bash = (
+        'PATH="$(grep -v \'^[[:space:]]*#\' '
+        + display
+        + ' | grep -v \'^[[:space:]]*$\' | paste -sd: -)${PATH:+:$PATH}"\n'
+        "export PATH\n"
+    )
+    return zsh, bash
+
+
+def _comment_out_lines(
+    rc_files: Sequence[Tuple[Path, str]],
+    owners: List[str],
+    home: Path | None = None,
+) -> List[PathLine]:
+    owner_resolved = set()
+    for raw in owners:
+        try:
+            owner_resolved.add(Path(raw).expanduser().resolve())
+        except OSError:
+            continue
+    dedicated = {".zsh_path", ".path", ".env", ".zsh_path.brew-to-ports"}
+    home = home or Path.home()
+    found: List[PathLine] = []
+    for path, text in rc_files:
+        try:
+            resolved = path.expanduser().resolve()
+        except OSError:
+            resolved = path
+        if resolved in owner_resolved:
+            continue
+        for lineno, line in enumerate(text.splitlines(), 1):
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            kind = ""
+            replace = False
+            if _BREW_SHELLENV_RE.search(line):
+                kind = "shellenv"
+            elif _EXPORT_PATH_RE.match(line) or _EXPORT_PATH_RE.search(line):
+                kind = "export"
+            else:
+                sourced = sourced_paths(line + "\n", from_file=path, home=home)
+                for src in sourced:
+                    try:
+                        src_res = src.resolve()
+                    except OSError:
+                        src_res = src
+                    if src_res in owner_resolved or src.name in dedicated:
+                        kind = "source_owner"
+                        replace = True
+                        break
+            if kind:
+                found.append(
+                    PathLine(
+                        path=str(path),
+                        lineno=lineno,
+                        text=stripped,
+                        kind=kind,
+                        replace_with_load=replace,
+                    )
+                )
+    return found
+
+
+def _expand_entry(entry: str, home: Path | None = None) -> str:
+    home_s = str(home or Path.home())
+    if entry.startswith("$HOME"):
+        return home_s + entry[len("$HOME") :]
+    if entry.startswith("~"):
+        return home_s + entry[1:]
+    return entry
 
 
 def _zsh_path_entry(entry: str) -> str:

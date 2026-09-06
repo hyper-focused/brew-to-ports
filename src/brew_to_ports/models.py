@@ -78,6 +78,15 @@ class ConfigFile:
 
 
 @dataclass
+class PathLine:
+    path: str
+    lineno: int
+    text: str
+    kind: str  # source_owner | export | shellenv
+    replace_with_load: bool = False
+
+
+@dataclass
 class PathAdvice:
     current_path: str
     suggested: str
@@ -90,6 +99,11 @@ class PathAdvice:
     alias_hits: List[str] = field(default_factory=list)
     linker_hits: List[str] = field(default_factory=list)
     array_entries: List[str] = field(default_factory=list)
+    path_file: str = ""
+    path_file_contents: str = ""
+    comment_out: List[PathLine] = field(default_factory=list)
+    load_zsh: str = ""
+    load_bash: str = ""
 
 
 @dataclass

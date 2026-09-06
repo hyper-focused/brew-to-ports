@@ -22,8 +22,8 @@ class PathTests(unittest.TestCase):
         self.assertGreater(parts.index("/usr/local/bin"), parts.index("/opt/local/bin"))
         self.assertNotIn("/opt/local/bin/", parts)
         text = snippet(advice)
-        self.assertIn("brew-to-ports:", text)
-        self.assertIn("export PATH=", text)
+        self.assertIn("brew-to-ports", text)
+        self.assertIn("Comment out", text)
 
     def test_rc_hits(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -47,9 +47,15 @@ class PathTests(unittest.TestCase):
             names = [p.name for p, _ in files]
             self.assertIn(".zshrc", names)
             self.assertIn(".zsh_path", names)
-            advice = suggest_path("/usr/bin", rc_files=files)
-            self.assertTrue(any(p.endswith(".zsh_path") for p in advice.rc_hits))
-            self.assertTrue(any("zsh_path" in n for n in advice.notes))
+            advice = suggest_path(
+                "/usr/bin",
+                rc_files=files,
+                home=home,
+                path_file=home / ".zsh_path.brew-to-ports",
+            )
+            self.assertTrue(any(p.endswith(".zsh_path") for p in advice.path_owners + advice.rc_hits))
+            self.assertTrue(any(l.kind == "source_owner" for l in advice.comment_out))
+            self.assertIn("path=(", advice.load_zsh)
 
     def test_zshenv_collected_antidote_not_followed(self):
         from brew_to_ports.adapters.shell_env import read_rc_files
@@ -79,19 +85,29 @@ class PathTests(unittest.TestCase):
             self.assertIn(".zshenv", names)
             self.assertIn(".zsh_path", names)
             self.assertTrue(all("antidote" not in str(p) for p, _ in files))
-            advice = suggest_path("/usr/local/bin:/usr/bin", rc_files=files)
+            dest = home / ".zsh_path.brew-to-ports"
+            advice = suggest_path(
+                "/usr/local/bin:/usr/bin",
+                rc_files=files,
+                home=home,
+                path_file=dest,
+            )
             self.assertEqual(advice.idiom, "zsh-array")
             self.assertTrue(any(p.endswith(".zsh_path") for p in advice.path_owners))
             self.assertTrue(any("brew shellenv" in w for w in advice.extra_writers))
             self.assertTrue(any("MacPorts installer" in w for w in advice.extra_writers))
             self.assertTrue(advice.alias_hits)
+            kinds = {l.kind for l in advice.comment_out}
+            self.assertIn("shellenv", kinds)
+            self.assertIn("export", kinds)
+            self.assertIn("source_owner", kinds)
+            self.assertIn("/opt/local/bin", advice.path_file_contents)
+            self.assertIn("/opt/local/sbin", advice.path_file_contents)
+            self.assertNotIn("/usr/bin", advice.path_file_contents)
             text = snippet(advice)
             self.assertIn("path=(", text)
-            self.assertNotIn('export PATH="', text)
-            self.assertIn("/opt/local/bin", text)
-            self.assertIn("$HOME/.local/bin", text)
-            self.assertIn("$path", text)
-            self.assertNotIn("/usr/bin", text)
+            self.assertIn(".zsh_path.brew-to-ports", text)
+            self.assertIn("$path", advice.load_zsh)
 
     def test_fpath_is_not_path_owner(self):
         with tempfile.TemporaryDirectory() as tmp:

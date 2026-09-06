@@ -17,6 +17,8 @@ build/
 # Generated apply scripts (user-local)
 /migrate.sh
 /brew-to-ports-migrate.sh
+/brew-to-ports.path
+/.zsh_path.brew-to-ports
 
 # OS / editor
 .DS_Store

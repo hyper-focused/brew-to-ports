@@ -41,13 +41,7 @@ def render_commands(plan: Plan) -> str:
                 lines.append(f"brew uninstall {op.brew_name}")
         lines.append("")
     if plan.path_advice:
-        if plan.path_advice and plan.path_advice.path_owners:
-            where = ", ".join(plan.path_advice.path_owners)
-        elif plan.path_advice and plan.path_advice.rc_hits:
-            where = ", ".join(plan.path_advice.rc_hits)
-        else:
-            where = "the PATH owner file (often ~/.zsh_path, not .zshrc)"
-        lines.append(f"# PATH suggestion — paste yourself into: {where}")
+        lines.append("# PATH cutover — comment detected writers; load the generated file")
         for raw in snippet(plan.path_advice).splitlines():
             lines.append(raw)
         lines.append("")

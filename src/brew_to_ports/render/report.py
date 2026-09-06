@@ -57,6 +57,8 @@ def render_report(plan: Plan) -> str:
             lines.append("  rc files that touch PATH / brew prefixes:")
             for hit in advice.rc_hits:
                 lines.append(f"    {hit}")
+        if advice.path_file:
+            lines.append(f"  dump: {advice.path_file}")
         lines.append("")
         lines.append(snippet(advice).rstrip())
         lines.append("")
