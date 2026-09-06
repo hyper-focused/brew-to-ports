@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+
+# Tool cache / journals
+.cache/
+*.journal.json
+
+# Generated apply scripts (user-local)
+/migrate.sh
+/brew-to-ports-migrate.sh
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
