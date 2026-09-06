@@ -10,6 +10,11 @@ fi
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 export PYTHONPATH="${ROOT}/src${PYTHONPATH:+:$PYTHONPATH}"
 
+if [[ "$(/usr/bin/id -u)" -eq 0 ]]; then
+  echo "brew-to-ports: run as your login user, not sudo. Homebrew must not run as root." >&2
+  exit 1
+fi
+
 macos="$(/usr/bin/sw_vers -productVersion 2>/dev/null || true)"
 major="${macos%%.*}"
 if ! [[ "$major" == <-> ]] || (( major < 13 )); then

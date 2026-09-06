@@ -51,6 +51,48 @@ if ! [[ "$major" == <-> ]] || (( major < 13 )); then
   exit 1
 fi
 
+# Homebrew must run as the login user (it owns /usr/local and launchd services).
+# MacPorts writes /opt/local and needs root. Never `sudo brew`.
+# If this script was started with sudo, drop brew back to $SUDO_USER.
+typeset -a BREW_AS PORT_AS
+BREW_AS=()
+PORT_AS=()
+if [[ "$(/usr/bin/id -u)" -eq 0 ]]; then
+  if [[ -z "${SUDO_USER:-}" || "$SUDO_USER" == "root" ]]; then
+    echo "brew-to-ports: do not run migrate.sh as root. Run as your login user; the script sudo's port only." >&2
+    exit 1
+  fi
+  BREW_OWNER="$SUDO_USER"
+  BREW_AS=(/usr/bin/sudo -u "$BREW_OWNER" -H --)
+else
+  BREW_OWNER="$(/usr/bin/id -un)"
+  PORT_AS=(/usr/bin/sudo)
+fi
+
+# One sudo password for the whole --apply. A single `sudo port install` stays
+# root for the entire compile; the ticket only matters *between* packages.
+# Keepalive + pre-command refresh on this TTY (macOS tty_tickets). Never store a password.
+# sudo -n after that: ticket dead → fail closed, no prompt storm.
+SUDO_KEEP_PID=""
+if [[ "$APPLY" -eq 1 && "$(/usr/bin/id -u)" -ne 0 ]]; then
+  echo "Enter your sudo password for MacPorts package installations."
+  /usr/bin/sudo -v || {
+    echo "brew-to-ports: sudo is required for port install (once). Aborting." >&2
+    exit 1
+  }
+  (
+    if [[ -e /dev/tty ]]; then
+      exec </dev/tty
+    fi
+    while /usr/bin/sudo -n -v >/dev/null 2>&1; do
+      sleep 30
+    done
+  ) &
+  SUDO_KEEP_PID=$!
+  trap '[[ -n "${SUDO_KEEP_PID:-}" ]] && kill "$SUDO_KEEP_PID" 2>/dev/null || true' EXIT INT TERM
+  PORT_AS=(/usr/bin/sudo -n)
+fi
+
 acked() {
   local name="$1"
   local x
@@ -106,7 +148,7 @@ def render_script(plan: Plan) -> str:
             lines.append(f"#   {cfg.brew_package}: {cfg.brew_path} -> {cfg.guessed_ports_path}{extra}")
         lines.append("")
 
-    lines.append('run "$SUDO" "$PORT" selfupdate')
+    lines.append("port_sudo selfupdate")
     lines.append("")
 
     for op in installs:
@@ -143,24 +185,45 @@ def _sh_single(value: str) -> str:
 
 
 HELPERS = r'''
+sudo_refresh() {
+  if [[ "$(/usr/bin/id -u)" -eq 0 ]]; then
+    return 0
+  fi
+  if [[ -e /dev/tty ]]; then
+    /usr/bin/sudo -n -v </dev/tty >/dev/null 2>&1
+  else
+    /usr/bin/sudo -n -v >/dev/null 2>&1
+  fi
+}
+
+port_sudo() {
+  if [[ "$APPLY" -eq 1 && "$(/usr/bin/id -u)" -ne 0 ]]; then
+    if ! sudo_refresh; then
+      echo "brew-to-ports: sudo ticket expired. Re-run --apply (restart-safe)." >&2
+      exit 1
+    fi
+  fi
+  run "${PORT_AS[@]}" "$PORT" "$@"
+}
+
 port_has() {
   "$PORT" -q installed "$1" >/dev/null 2>&1
 }
 
 brew_has_formula() {
-  "$BREW" list --formula "$1" >/dev/null 2>&1
+  "${BREW_AS[@]}" "$BREW" list --formula "$1" >/dev/null 2>&1
 }
 
 brew_has_cask() {
-  "$BREW" list --cask "$1" >/dev/null 2>&1
+  "${BREW_AS[@]}" "$BREW" list --cask "$1" >/dev/null 2>&1
 }
 
 stop_brew_service() {
   local name="$1"
   local st
-  st="$("$BREW" services list 2>/dev/null | awk -v n="$name" '$1==n {print $2; exit}')" || return 0
+  st="$("${BREW_AS[@]}" "$BREW" services list 2>/dev/null | awk -v n="$name" '$1==n {print $2; exit}')" || return 0
   [[ "$st" == "started" || "$st" == "error" ]] || return 0
-  run "$BREW" services stop "$name" || true
+  run "${BREW_AS[@]}" "$BREW" services stop "$name" || true
 }
 
 install_port() {
@@ -169,7 +232,7 @@ install_port() {
     echo "skip: port $name already installed"
     return 0
   fi
-  run "$SUDO" "$PORT" install "$name"
+  port_sudo install "$name"
   if [[ "$APPLY" -eq 1 ]]; then
     port_has "$name"
   else
@@ -185,7 +248,7 @@ uninstall_brew() {
       echo "skip: brew cask $name not installed"
       return 0
     fi
-    run "$BREW" uninstall --cask "$name"
+    run "${BREW_AS[@]}" "$BREW" uninstall --cask "$name"
     return 0
   fi
   if [[ "$APPLY" -eq 1 ]] && ! brew_has_formula "$name"; then
@@ -193,14 +256,14 @@ uninstall_brew() {
     return 0
   fi
   stop_brew_service "$name"
-  run "$BREW" uninstall "$name"
+  run "${BREW_AS[@]}" "$BREW" uninstall "$name"
 }
 
 autoremove_brew() {
   if [[ "$APPLY" -eq 1 ]]; then
-    run "$BREW" autoremove || true
+    run "${BREW_AS[@]}" "$BREW" autoremove || true
   else
-    run "$BREW" autoremove
+    run "${BREW_AS[@]}" "$BREW" autoremove
   fi
 }
 '''

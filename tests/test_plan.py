@@ -251,6 +251,15 @@ class PlanSliceTests(unittest.TestCase):
         self.assertIn("stop_brew_service", script)
         self.assertIn("autoremove_brew", script)
         self.assertIn("already installed", script)
+        self.assertIn("BREW_AS", script)
+        self.assertIn("PORT_AS", script)
+        self.assertIn("sudo -u", script)
+        self.assertIn("sudo -v", script)
+        self.assertIn("SUDO_KEEP_PID", script)
+        self.assertIn("sudo -n -v", script)
+        self.assertIn("port_sudo", script)
+        self.assertIn("sudo_refresh", script)
+        self.assertNotIn('run "$SUDO" "$BREW"', script)
 
     def test_portindex_sample_roundtrip(self):
         path = write_portindex_sample()

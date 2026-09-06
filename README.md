@@ -50,11 +50,25 @@ No pip dependencies. Python 3.9+ stdlib only.
 
 ## Usage
 
+The scan is read-only. Do not expect `./brew-to-ports` to `brew uninstall` anything. `migrate.sh --apply` is the only mutator; it already runs `brew autoremove` at the **end**.
+
+Run the planner and `migrate.sh` as **your login user**, never `sudo ./migrate.sh`. Homebrew owns `/usr/local` and your launchd services; `sudo brew` is how you get a root-owned cellar. The script `sudo`s **only** `port` (`selfupdate` / `install`). `--apply` asks for your sudo password **once** (`sudo -v`) and keeps the ticket alive; it does not store the password. Later `port` calls use `sudo -n` (fail if the ticket died, no 76 prompts). If you do `sudo ./migrate.sh` anyway, it drops `brew` back to `$SUDO_USER` and refuses if it cannot tell who that is. A few casks may prompt for sudo on their own — that is brew calling sudo, not us wrapping brew.
+
+**Before you scan** (optional hygiene — you run these, not the planner):
+
+```sh
+brew autoremove --dry-run    # orphans: unrequested, nothing still needs them
+brew cleanup --dry-run       # old kegs + cache, not installed formulae
+```
+
+If that list is junk, run them for real, **then** scan. If it names something you still invoke by PATH, leave it. `installed_on_request` lies. Repeat: scan → apply → scan again. One `migrate.sh` is a snapshot of this cellar; keep-set is computed from who still has a brew reason to live.
+
 ```sh
 ./brew-to-ports                          # scan (read-only)
 ./brew-to-ports --script --commands --path-file
 ./migrate.sh                             # dry-run
 ./migrate.sh --apply                     # the only mutator
+./brew-to-ports --script                 # wave 2, after the cellar changed
 ```
 
 `--path-file` writes `~/.zsh_path.brew-to-ports` (one directory per line). The report lists `source` / `export PATH` / `brew shellenv` lines to comment, plus zsh/bash load one-liners. It does not edit rc files.
