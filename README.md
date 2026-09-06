@@ -1,49 +1,24 @@
 # brew-to-ports
 
-Inventory Homebrew on **Intel Macs** and plan a conservative migration to MacPorts.
+Plan a Homebrew → MacPorts move on **Intel** Macs. Homebrew is Tier 3 on Intel (no new bottles; gone ~Sep 2027).
 
-Homebrew classifies all Intel x86_64 Macs as Tier 3 (no new bottles, no CI) and will stop running on Intel in or after September 2027. Homebrew itself points those machines at MacPorts. This tool tells you what can move, what should stay, and what will bite you.
+Scan is read-only. `migrate.sh` is dry-run unless you pass `--apply`. Config/state is inventoried, not copied. Apple Silicon is a hard fail.
 
-It does **not** silently rewrite your machine.
-
-## What it does
-
-- Lists installed Homebrew formulae and casks (bottle vs source, requested vs dependency).
-- Matches them to MacPorts ports (name cascade + version compare).
-- Classifies each package: **migrate** / **keep on brew** / **exception**.
-- Prints copy/paste commands, a PATH suggestion, and config/state files that will **not** come along.
-- Can write `migrate.sh`. That script **defaults to dry-run**. `--apply` is the only mutator.
-
-## What it will not do (v1)
-
-- Run on Apple Silicon (hard fail; Homebrew is still Tier 1 there).
-- Copy or merge config/data files (`nginx.conf`, database dirs, TLS keys, …).
-- Edit `~/.zshrc` / `~/.bashrc`.
-- Uninstall leftover Homebrew, or yank a brew library still needed by a package you are keeping.
-- Auto-migrate a MacPorts port that is an older major (or older same-major unless you pass `--allow-older-same-major`).
-
-## Requirements
-
-- Intel x86_64 macOS
-- Homebrew (`brew info --json=v2 --installed`)
-- `/usr/bin/python3` (Command Line Tools). Do not use Homebrew’s Python as the runtime.
-- MacPorts optional for a local PortIndex; `--portindex FILE` works without it.
+Audience: people who already live in a terminal. The scanner does what it can with PATH files, `source`/`export`/`brew shellenv` lines, and a best-effort `/usr/local` → `/opt/local` swap on aliases and linker flags. It will not catch every keg, GNU `g-` prefix, or variant. If your rc graph is weirder than that, you already know to verify it.
 
 ## Usage
 
 ```sh
-./brew-to-ports                  # scan (no changes)
-./brew-to-ports --script --commands
-./migrate.sh                     # print what would happen
-./migrate.sh --apply             # actually install ports / uninstall brew formulae
-
-PATH advice follows `source` / `.` includes under `$HOME`. `--script` / `--path-file` dumps a replacement file (`~/.zsh_path.brew-to-ports` by default, one directory per line). The report lists exact `source` / `export PATH` / `brew shellenv` lines to comment out, then a zsh `path=( ${(f)"$(< file)"} )` or bash `PATH=$(paste …)` load. It still will not edit rc files.
+./brew-to-ports
+./brew-to-ports --script --commands --path-file
+./migrate.sh              # dry-run
+./migrate.sh --apply
 ```
+
+`--path-file` writes `~/.zsh_path.brew-to-ports` (one dir per line). The report lists `source` / `export PATH` / `brew shellenv` lines to comment, plus zsh/bash load one-liners.
+
+Requires Intel x86_64, `brew info --json=v2 --installed`, and `/usr/bin/python3` (not Homebrew’s). MacPorts is optional if you pass `--portindex`.
 
 ## Layout
 
-Python 3 stdlib core under `src/brew_to_ports/`. Thin zsh wrapper `brew-to-ports`. Curated name aliases and exception categories live in `data/`, not as one function per formula.
-
-## License
-
-Not yet declared. Treat as source-available until a license file lands.
+Python 3 stdlib under `src/brew_to_ports/`. Wrapper: `brew-to-ports`. Aliases/exceptions: `data/*.json`.

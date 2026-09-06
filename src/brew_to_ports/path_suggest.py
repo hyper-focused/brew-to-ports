@@ -25,6 +25,14 @@ _LINKER_RE = re.compile(
 )
 _MACPORTS_INSTALLER_RE = re.compile(r"MacPorts Installer addition")
 
+# Keg trees before /usr/local/bin so we don't half-rewrite /usr/local/opt/...
+_KEG_GNUBIN_RE = re.compile(r"/usr/local/opt/[^/]+/libexec/gnubin")
+_KEG_BIN_RE = re.compile(r"/usr/local/opt/[^/]+/bin")
+_KEG_SBIN_RE = re.compile(r"/usr/local/opt/[^/]+/sbin")
+_KEG_LIB_RE = re.compile(r"/usr/local/opt/[^/]+/lib")
+_KEG_INC_RE = re.compile(r"/usr/local/opt/[^/]+/include")
+_KEG_SHARE_RE = re.compile(r"/usr/local/opt/[^/]+/share")
+
 
 def default_path_file(home: Path | None = None) -> Path:
     return (home or Path.home()) / ".zsh_path.brew-to-ports"
@@ -60,41 +68,15 @@ def suggest_path(
     suggested = ":".join(head + rest)
     analysis = _analyze_rc(rc_files or [])
 
-    notes = [
-        "Do not edit rc files automatically. Comment the listed lines yourself; source the generated path file.",
-        "PKG_CONFIG_PATH / LDFLAGS / CPPFLAGS that point at brew prefixes will still see Homebrew libs until you change them.",
-        "Includes are followed (source / .) under $HOME only — not Homebrew/antidote plugin trees.",
-    ]
+    notes: List[str] = []
     if analysis["path_owners"]:
-        notes.append(
-            "PATH owner(s): "
-            + ", ".join(analysis["path_owners"])
-            + f" (idiom: {analysis['idiom'] or 'unknown'})."
-        )
-    if analysis["extra_writers"]:
-        notes.append(
-            "Extra PATH writers (second opinions — pick one owner): "
-            + "; ".join(analysis["extra_writers"])
-        )
+        notes.append(f"owner: {', '.join(analysis['path_owners'])} ({analysis['idiom'] or 'unknown'})")
     if analysis["alias_hits"]:
-        notes.append(
-            "Hardcoded Homebrew aliases (update if those formulae migrate): "
-            + ", ".join(analysis["alias_hits"])
-        )
+        notes.append("aliases still on brew prefixes: " + ", ".join(analysis["alias_hits"]))
     if analysis["linker_hits"]:
-        notes.append(
-            "Linker/pkg-config flags still pointing at brew: "
-            + ", ".join(analysis["linker_hits"])
-        )
-    if analysis["path_helper"]:
-        notes.append(
-            "Login zsh runs /etc/zprofile path_helper BETWEEN .zshenv and .zprofile. "
-            "Keep a load of the generated path file in .zprofile (after path_helper), not brew shellenv."
-        )
+        notes.append("LDFLAGS/CPPFLAGS/PKG_CONFIG_PATH: " + ", ".join(analysis["linker_hits"]))
     if ARM_BREW_BIN in entries:
-        notes.append("PATH contains /opt/homebrew/bin — unexpected on Intel; leaving it in place but MacPorts still goes first.")
-    if INTEL_BREW_BIN in entries and ports_bin:
-        notes.append("Dual-stack: MacPorts first, leftover Homebrew after. Name collisions will shadow brew binaries.")
+        notes.append("PATH contains /opt/homebrew/bin on Intel")
 
     array_entries: List[str] = []
     if analysis["idiom"] == "zsh-array":
@@ -110,9 +92,7 @@ def suggest_path(
     path_file_contents = _path_file_contents(abs_entries)
     comment_out = _comment_out_lines(rc_files or [], analysis["path_owners"], home=home)
     load_zsh, load_bash = _load_snippets(dest, home=home)
-
-    notes.append(f"Generated PATH file: {dest} (written with --script or --path-file).")
-    notes.append("Comment out the listed source/export/shellenv lines, then load that file from .zshenv and again from .zprofile after path_helper.")
+    rewrites = _prefix_rewrites(rc_files or [], ports_prefix)
 
     return PathAdvice(
         current_path=current_path,
@@ -131,33 +111,42 @@ def suggest_path(
         comment_out=comment_out,
         load_zsh=load_zsh,
         load_bash=load_bash,
+        rewrites=rewrites,
     )
 
 
 def snippet(advice: PathAdvice) -> str:
-    """Human instructions: comment detected PATH writers, load the generated file."""
+    """Comment listed writers; load the generated path file as an array."""
+    dest = advice.path_file or str(default_path_file())
     lines = [
-        f"# brew-to-ports PATH cutover (does not edit rc files for you)",
-        f"# 1. Review/write {advice.path_file or default_path_file()}",
-        "# 2. Comment out these detected PATH writers:",
+        f"# PATH file: {dest}",
+        "# Comment:",
     ]
     if advice.comment_out:
         current = None
         for item in advice.comment_out:
             if item.path != current:
-                lines.append(f"#    {item.path}")
+                lines.append(f"#   {item.path}")
                 current = item.path
-            lines.append(f"#      {item.lineno}: {item.text}")
+            lines.append(f"#     {item.lineno}: {item.text}")
     else:
-        lines.append("#    (none detected)")
-    lines.append("# 3. In their place, load the generated file:")
-    lines.append("#    zsh (.zshenv and again in .zprofile after path_helper):")
+        lines.append("#   (none)")
+    lines.append("# zsh — .zshenv and .zprofile (after path_helper):")
     for raw in (advice.load_zsh or "").splitlines():
         lines.append(raw)
-    lines.append("#    bash (.profile / .bash_profile):")
+    lines.append("# bash — .profile / .bash_profile:")
     for raw in (advice.load_bash or "").splitlines():
         lines.append(raw)
-    lines.append("# Leave the old PATH owner file in place as a backup.")
+    if advice.rewrites:
+        lines.append("# prefix swap (best-effort; GNU names/kegs/variants will still surprise you):")
+        current = None
+        for item in advice.rewrites:
+            if item.path != current:
+                lines.append(f"#   {item.path}")
+                current = item.path
+            lines.append(f"#     {item.lineno}: {item.text}")
+            if item.suggested and item.suggested != item.text:
+                lines.append(item.suggested)
     return "\n".join(lines) + "\n"
 
 
@@ -255,8 +244,7 @@ def _rewrite_zsh_array(text: str, ports_bin: str, ports_sbin: str) -> List[str]:
 
 def _path_file_contents(abs_entries: List[str]) -> str:
     lines = [
-        "# brew-to-ports generated PATH — one directory per line.",
-        "# Not a script. Load it with the zsh/bash array one-liners from the scan report.",
+        "# brew-to-ports PATH — one directory per line; load via scan report one-liners",
         "",
     ]
     seen = set()
@@ -341,6 +329,56 @@ def _comment_out_lines(
                         replace_with_load=replace,
                     )
                 )
+    return found
+
+
+def rewrite_brew_prefix(text: str, ports_prefix: str = "/opt/local") -> str:
+    """Map common Homebrew prefix/keg paths onto MacPorts. Not complete."""
+    s = text
+    s = _KEG_GNUBIN_RE.sub(f"{ports_prefix}/libexec/gnubin", s)
+    s = _KEG_BIN_RE.sub(f"{ports_prefix}/bin", s)
+    s = _KEG_SBIN_RE.sub(f"{ports_prefix}/sbin", s)
+    s = _KEG_LIB_RE.sub(f"{ports_prefix}/lib", s)
+    s = _KEG_INC_RE.sub(f"{ports_prefix}/include", s)
+    s = _KEG_SHARE_RE.sub(f"{ports_prefix}/share", s)
+    s = s.replace("/usr/local/bin", f"{ports_prefix}/bin")
+    s = s.replace("/usr/local/sbin", f"{ports_prefix}/sbin")
+    s = s.replace("/opt/homebrew/bin", f"{ports_prefix}/bin")
+    s = s.replace("/opt/homebrew/sbin", f"{ports_prefix}/sbin")
+    return s
+
+
+def _prefix_rewrites(
+    rc_files: Sequence[Tuple[Path, str]],
+    ports_prefix: str,
+) -> List[PathLine]:
+    found: List[PathLine] = []
+    for path, text in rc_files:
+        for lineno, line in enumerate(text.splitlines(), 1):
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if _EXPORT_PATH_RE.search(line) or _BREW_SHELLENV_RE.search(line):
+                continue
+            kind = ""
+            if _ALIAS_BREW_RE.search(line):
+                kind = "alias"
+            elif _LINKER_RE.search(line) and (
+                "/usr/local" in line or "/opt/homebrew" in line
+            ):
+                kind = "linker"
+            else:
+                continue
+            suggested = rewrite_brew_prefix(stripped, ports_prefix)
+            found.append(
+                PathLine(
+                    path=str(path),
+                    lineno=lineno,
+                    text=stripped,
+                    kind=kind,
+                    suggested=suggested if suggested != stripped else "",
+                )
+            )
     return found
 
 

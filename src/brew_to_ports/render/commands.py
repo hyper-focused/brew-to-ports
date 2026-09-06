@@ -10,9 +10,7 @@ def render_commands(plan: Plan) -> str:
     installs = [op for op in plan.ops if op.action == "port_install"]
     uninstalls = [op for op in plan.ops if op.action == "brew_uninstall"]
     lines = [
-        "# brew-to-ports copy/paste commands",
-        "# Conservative: review, then run. migrate.sh --apply is the mutator.",
-        "",
+        "# brew-to-ports",
         "sudo port selfupdate",
         "",
     ]
@@ -41,15 +39,13 @@ def render_commands(plan: Plan) -> str:
                 lines.append(f"brew uninstall {op.brew_name}")
         lines.append("")
     if plan.path_advice:
-        lines.append("# PATH cutover — comment detected writers; load the generated file")
         for raw in snippet(plan.path_advice).splitlines():
             lines.append(raw)
         lines.append("")
     if plan.configs:
-        lines.append("# CONFIG review (not applied)")
+        lines.append("# config/state left on brew prefix (not copied)")
         for cfg in plan.configs:
-            lines.append(f"#   {cfg.brew_package}: {cfg.brew_path} -> {cfg.guessed_ports_path}")
-            if cfg.contains_brew_paths:
-                lines.append("#     contains /usr/local or brew prefix paths — edit by hand, do not cp")
+            extra = " brew-paths" if cfg.contains_brew_paths else ""
+            lines.append(f"#   {cfg.brew_package}: {cfg.brew_path} -> {cfg.guessed_ports_path}{extra}")
         lines.append("")
     return "\n".join(lines)

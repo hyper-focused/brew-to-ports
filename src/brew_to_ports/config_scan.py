@@ -48,7 +48,7 @@ def scan_configs(
                     kind=kind,
                     copy_safe=False,
                     contains_brew_paths=contains,
-                    note="edit by hand, do not cp" if contains else "review before any copy; tool will not copy",
+                    note="contains brew-prefix paths" if contains else "",
                 )
             )
     return findings

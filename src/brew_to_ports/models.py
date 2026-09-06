@@ -82,8 +82,9 @@ class PathLine:
     path: str
     lineno: int
     text: str
-    kind: str  # source_owner | export | shellenv
+    kind: str  # source_owner | export | shellenv | alias | linker
     replace_with_load: bool = False
+    suggested: str = ""
 
 
 @dataclass
@@ -104,6 +105,7 @@ class PathAdvice:
     comment_out: List[PathLine] = field(default_factory=list)
     load_zsh: str = ""
     load_bash: str = ""
+    rewrites: List[PathLine] = field(default_factory=list)
 
 
 @dataclass

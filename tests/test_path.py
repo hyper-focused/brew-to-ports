@@ -23,7 +23,7 @@ class PathTests(unittest.TestCase):
         self.assertNotIn("/opt/local/bin/", parts)
         text = snippet(advice)
         self.assertIn("brew-to-ports", text)
-        self.assertIn("Comment out", text)
+        self.assertIn("Comment:", text)
 
     def test_rc_hits(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -108,6 +108,24 @@ class PathTests(unittest.TestCase):
             self.assertIn("path=(", text)
             self.assertIn(".zsh_path.brew-to-ports", text)
             self.assertIn("$path", advice.load_zsh)
+            self.assertTrue(any(r.kind == "alias" and "/opt/local/bin/bat" in (r.suggested or "") for r in advice.rewrites))
+            self.assertIn("/opt/local/bin/bat", text)
+
+    def test_prefix_swap_keg_and_linker(self):
+        from brew_to_ports.path_suggest import rewrite_brew_prefix
+
+        self.assertEqual(
+            rewrite_brew_prefix('alias curl="/usr/local/opt/curl/bin/curl"'),
+            'alias curl="/opt/local/bin/curl"',
+        )
+        self.assertEqual(
+            rewrite_brew_prefix('alias head="/usr/local/opt/coreutils/libexec/gnubin/head"'),
+            'alias head="/opt/local/libexec/gnubin/head"',
+        )
+        self.assertEqual(
+            rewrite_brew_prefix('export LDFLAGS="-L/usr/local/opt/ruby/lib"'),
+            'export LDFLAGS="-L/opt/local/lib"',
+        )
 
     def test_fpath_is_not_path_owner(self):
         with tempfile.TemporaryDirectory() as tmp:
