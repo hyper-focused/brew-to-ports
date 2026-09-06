@@ -77,6 +77,8 @@ If that list is junk, run them for real, **then** scan. If it names something yo
 
 On a TTY, python / `python@*` families get `[m]igrate` / `[s]kip` / `[q]uit` (then `yes` if anything would be deleted). `q` writes nothing. Non-TTY stays dual-stack unless `--migrate-runtime python@3.13` and `--i-acked-drop python@3.13` when unmatched children would be dropped. php/node/ruby are not in this slice.
 
+`--try-source` writes best-effort overlay Portfiles (github noarch, Go, autoreconf) under `~/.brew-to-ports/overlay` and plans `port -D` install. cmake/rust/PyPI/mysql are not attempted. Failed overlay install leaves the brew keg. Does not edit `sources.conf`.
+
 `--brew-json FILE` / `--portindex FILE` run against dumps (useful for tests and for machines that cannot talk to the PortIndex).
 
 ## What it does

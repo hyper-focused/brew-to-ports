@@ -44,6 +44,10 @@ class Package:
     categories: List[str] = field(default_factory=list)
     replaced_by: str = ""
     description: str = ""
+    source_url: str = ""
+    sha256: str = ""
+    license: str = ""
+    build_deps: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -122,6 +126,7 @@ class PlanOp:
     hold_uninstall: bool = False
     comment: str = ""
     kind: str = KIND_FORMULA
+    overlay_dir: str = ""
 
 
 @dataclass
@@ -152,3 +157,4 @@ class Plan:
     catalog_source: str = ""
     notes: List[str] = field(default_factory=list)
     cutover: List[CutoverChoice] = field(default_factory=list)
+    try_source_root: str = ""

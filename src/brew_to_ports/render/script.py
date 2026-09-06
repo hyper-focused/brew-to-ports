@@ -136,6 +136,7 @@ def render_script(plan: Plan) -> str:
     )
     lines.append("")
     installs = [op for op in plan.ops if op.action == "port_install"]
+    tries = [op for op in plan.ops if op.action == "try_source"]
     uninstalls = [op for op in plan.ops if op.action == "brew_uninstall"]
 
     if plan.configs:
@@ -159,6 +160,11 @@ def render_script(plan: Plan) -> str:
         lines.append(f'install_port {op.port_name}')
         lines.append("")
 
+    for op in tries:
+        lines.append(f"echo '--> try-source {op.port_name} from overlay {op.overlay_dir}'")
+        lines.append(f'try_source_port {_sh_single(op.port_name)} {_sh_single(op.overlay_dir)}')
+        lines.append("")
+
     for op in uninstalls:
         kind = op.kind or "formula"
         if op.hold_uninstall:
@@ -173,6 +179,9 @@ def render_script(plan: Plan) -> str:
         elif op.comment.startswith("drop:"):
             lines.append(f"echo '--> DROP {op.brew_name} (no MacPorts equivalent; not replaced)'")
             lines.append(f"uninstall_brew {op.brew_name} {kind}")
+        elif op.comment == "try_source":
+            lines.append(f"echo '--> brew uninstall {op.brew_name} (only if overlay port installed)'")
+            lines.append(f'uninstall_brew_if_port {op.brew_name} {kind} {op.port_name}')
         else:
             lines.append(f"echo '--> brew uninstall {op.brew_name}'")
             lines.append(f"uninstall_brew {op.brew_name} {kind}")
@@ -261,6 +270,34 @@ install_port() {
   else
     run "$PORT" -q installed "$name"
   fi
+}
+
+try_source_port() {
+  local name="$1"
+  local dir="$2"
+  if [[ "$APPLY" -eq 1 ]] && port_has "$name"; then
+    echo "skip: port $name already installed"
+    return 0
+  fi
+  if [[ "$APPLY" -eq 1 ]]; then
+    if ! port_sudo -D "$dir" install; then
+      echo "try-source failed for $name; leaving brew keg in place"
+      return 0
+    fi
+  else
+    run "${PORT_AS[@]}" "$PORT" -D "$dir" install
+  fi
+}
+
+uninstall_brew_if_port() {
+  local name="$1"
+  local kind="${2:-formula}"
+  local portname="${3:-$1}"
+  if [[ "$APPLY" -eq 1 ]] && ! port_has "$portname"; then
+    echo "skip: overlay port $portname not installed; leaving brew $name"
+    return 0
+  fi
+  uninstall_brew "$name" "$kind"
 }
 
 uninstall_brew() {

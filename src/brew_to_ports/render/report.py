@@ -31,6 +31,15 @@ def render_report(plan: Plan) -> str:
         f"counts: migrate={len(migrate)} keep={len(keep)} exception={len(exc)} drop={len(drop)}"
     )
     lines.append("")
+    tries = [op for op in plan.ops if op.action == "try_source"]
+    if tries:
+        lines.append("TRY-SOURCE (overlay Portfile; port -D install; brew stays if it fails)")
+        lines.append("---------------------------------------------------------------------")
+        if plan.try_source_root:
+            lines.append(f"  overlay: {plan.try_source_root}")
+        for op in tries:
+            lines.append(f"  {op.brew_name} -> {op.port_name}  {op.overlay_dir}")
+        lines.append("")
     if plan.cutover:
         lines.append("CUTOVER")
         lines.append("-------")

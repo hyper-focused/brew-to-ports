@@ -52,7 +52,27 @@ def _formula(raw: Dict[str, Any], installed: Set[str]) -> Package:
         linked=linked_flag,
         runtime_deps=deps,
         description=raw.get("desc") or "",
+        source_url=_stable_url(raw),
+        sha256=_stable_sha256(raw),
+        license=str(raw.get("license") or ""),
+        build_deps=[str(x) for x in (raw.get("build_dependencies") or []) if x],
     )
+
+
+def _stable_url(raw: Dict[str, Any]) -> str:
+    urls = raw.get("urls") or {}
+    stable = urls.get("stable") if isinstance(urls, dict) else None
+    if not isinstance(stable, dict):
+        return ""
+    return str(stable.get("url") or "")
+
+
+def _stable_sha256(raw: Dict[str, Any]) -> str:
+    urls = raw.get("urls") or {}
+    stable = urls.get("stable") if isinstance(urls, dict) else None
+    if not isinstance(stable, dict):
+        return ""
+    return str(stable.get("checksum") or "")
 
 
 def _formula_deps(raw: Dict[str, Any], inst: Dict[str, Any], installed: Set[str]) -> List[str]:

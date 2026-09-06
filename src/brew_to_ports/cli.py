@@ -21,6 +21,7 @@ from brew_to_ports.family import python_families
 from brew_to_ports.inventory import from_brew_json
 from brew_to_ports.path_suggest import default_path_file, suggest_path
 from brew_to_ports.plan import build_plan
+from brew_to_ports.source_try import default_overlay_root
 from brew_to_ports.render.commands import render_commands
 from brew_to_ports.render.report import render_report
 from brew_to_ports.render.script import render_script
@@ -144,6 +145,13 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="FORMULA",
         help="non-TTY: ack dropping unmatched children of this runtime (repeatable).",
     )
+    parser.add_argument(
+        "--try-source",
+        nargs="?",
+        const="DEFAULT",
+        metavar="DIR",
+        help="write overlay Portfiles for tryable no-match formulae and plan port -D install (default ~/.brew-to-ports/overlay).",
+    )
     return parser
 
 
@@ -185,6 +193,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             migrate_runtime=args.migrate_runtime,
             acked_drop=args.i_acked_drop,
             interactive_cutover=sys.stdin.isatty() and not args.migrate_runtime,
+            try_source_root=_try_source_root(args.try_source),
         )
     except CutoverAbort as exc:
         print(str(exc) or "brew-to-ports: cutover aborted; wrote nothing.", file=sys.stderr)
@@ -223,6 +232,7 @@ def run_scan(
     migrate_runtime: Optional[List[str]] = None,
     acked_drop: Optional[List[str]] = None,
     interactive_cutover: bool = False,
+    try_source_root: Optional[Path] = None,
 ) -> "Plan":
     packages = from_brew_json(payload)
     decisions = classify_all(packages, catalog, allow_older_same_major=allow_older_same_major)
@@ -243,6 +253,7 @@ def run_scan(
         catalog_source=catalog.source,
         allow_older_same_major=allow_older_same_major,
         cutover=choices,
+        try_source_root=try_source_root,
     )
     plan.configs = scan_configs(packages, plan.decisions, brew_pfx, ports_pfx)
     plan.path_advice = suggest_path(
@@ -253,6 +264,14 @@ def run_scan(
         path_file=path_file,
     )
     return plan
+
+
+def _try_source_root(value: Optional[str]) -> Optional[Path]:
+    if not value:
+        return None
+    if value == "DEFAULT":
+        return default_overlay_root()
+    return Path(value).expanduser()
 
 
 def _check_runtime_python(allow_brew: bool) -> None:

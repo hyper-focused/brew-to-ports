@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set
 
 from brew_to_ports.models import (
     CUTOVER_MIGRATE,
     CUTOVER_SKIP,
+    DELTA_EQUAL,
     KIND_CASK,
     KIND_FORMULA,
     STATUS_DROP,
@@ -16,10 +18,12 @@ from brew_to_ports.models import (
     STATUS_MIGRATE,
     CutoverChoice,
     Decision,
+    Match,
     Package,
     Plan,
     PlanOp,
 )
+from brew_to_ports.source_try import recipe_for, write_overlay
 
 
 def build_plan(
@@ -33,11 +37,13 @@ def build_plan(
     catalog_source: str = "",
     allow_older_same_major: bool = False,
     cutover: Optional[Sequence[CutoverChoice]] = None,
+    try_source_root: Optional[Path] = None,
 ) -> Plan:
     by_name: Dict[str, Package] = {p.name: p for p in packages}
     work: List[Decision] = [replace(d, reasons=list(d.reasons)) for d in decisions]
     notes: List[str] = []
     applied = _apply_cutover(packages, work, list(cutover or []), notes)
+    overlay_map = _apply_try_source(packages, work, try_source_root, notes)
 
     keep_set = _expand_keep_set(packages, work)
     decision_map: Dict[str, Decision] = {d.brew_name: d for d in work}
@@ -67,6 +73,19 @@ def build_plan(
         port = decision.match.port_name if decision.match else None
         if not port:
             continue
+        if decision.match and decision.match.rule_id == "try_source":
+            ops.append(
+                PlanOp(
+                    action="try_source",
+                    brew_name=pkg.name,
+                    port_name=port,
+                    hold_uninstall=decision.hold_uninstall,
+                    kind=pkg.kind,
+                    overlay_dir=str(overlay_map.get(pkg.name, "")),
+                    comment="try_source",
+                )
+            )
+            continue
         ops.append(
             PlanOp(
                 action="port_install",
@@ -86,6 +105,8 @@ def build_plan(
             comment = "held: ack config/state first"
         elif decision.status == STATUS_DROP:
             comment = "drop: no MacPorts equivalent"
+        elif decision.match and decision.match.rule_id == "try_source":
+            comment = "try_source"
         ops.append(
             PlanOp(
                 action="brew_uninstall",
@@ -112,6 +133,7 @@ def build_plan(
         allow_older_same_major=allow_older_same_major,
         notes=notes,
         cutover=applied,
+        try_source_root=str(try_source_root) if try_source_root else "",
     )
 
 
@@ -166,6 +188,48 @@ def _apply_cutover(
         notes.append(f"cutover {ch.runtime}: migrate; drop {', '.join(ch.drop) or '(none)'}")
         applied.append(ch)
     return applied
+
+
+def _apply_try_source(
+    packages: Sequence[Package],
+    decisions: List[Decision],
+    root: Optional[Path],
+    notes: List[str],
+) -> Dict[str, Path]:
+    written: Dict[str, Path] = {}
+    if root is None:
+        return written
+    dmap: Dict[str, Decision] = {d.brew_name: d for d in decisions}
+    for pkg in packages:
+        if not pkg.requested or pkg.kind != KIND_FORMULA:
+            continue
+        d = dmap.get(pkg.name)
+        if d is None or d.status != STATUS_KEEP:
+            continue
+        if d.match and d.match.port_name:
+            continue
+        rec = recipe_for(pkg)
+        if rec is None:
+            continue
+        portdir = write_overlay(pkg, root)
+        if portdir is None:
+            continue
+        d.status = STATUS_MIGRATE
+        d.category = "try_source"
+        d.reasons = list(d.reasons) + [f"try_source {rec.shape}"]
+        d.match = Match(
+            brew_name=pkg.name,
+            port_name=rec.port_name,
+            confidence="try_source",
+            rule_id="try_source",
+            version_delta=DELTA_EQUAL,
+            brew_version=pkg.version,
+            port_version=pkg.version,
+            reasons=[f"overlay {rec.shape}"],
+        )
+        written[pkg.name] = portdir
+        notes.append(f"try-source {pkg.name} ({rec.shape}) -> {portdir}")
+    return written
 
 
 def _expand_keep_set(packages: Sequence[Package], decisions: Sequence[Decision]) -> Set[str]:
