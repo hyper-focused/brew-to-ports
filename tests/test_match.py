@@ -164,6 +164,76 @@ class CascadeTests(unittest.TestCase):
         self.assertIn(m.port_name, ("py-scipy", "py314-scipy", "py313-scipy"))
         self.assertEqual(m.rule_id, "homepage_family")
 
+    def test_ruby_prefix_to_rb_series(self):
+        catalog = from_dicts(
+            [
+                {"name": "rb-nokogiri", "version": "1.16.7", "homepage": ""},
+                {"name": "rb33-nokogiri", "version": "1.16.7", "homepage": ""},
+            ]
+        )
+        pkg = Package(
+            name="ruby-nokogiri",
+            version="1.16.7",
+            kind="formula",
+            origin="brew",
+            runtime_deps=["ruby@3.3"],
+        )
+        m = match_package(pkg, catalog, aliases={})
+        self.assertEqual(m.port_name, "rb33-nokogiri")
+
+    def test_perl_prefix_to_p5_series(self):
+        catalog = from_dicts(
+            [
+                {"name": "p5-xml-parser", "version": "2.47", "homepage": ""},
+                {"name": "p5.34-xml-parser", "version": "2.47", "homepage": ""},
+            ]
+        )
+        pkg = Package(
+            name="perl-xml-parser",
+            version="2.47",
+            kind="formula",
+            origin="brew",
+            runtime_deps=["perl@5.34"],
+        )
+        m = match_package(pkg, catalog, aliases={})
+        self.assertEqual(m.port_name, "p5.34-xml-parser")
+
+    def test_r_prefix_and_r_dep(self):
+        catalog = from_dicts(
+            [{"name": "r-ggplot2", "version": "3.5.1", "homepage": "https://ggplot2.tidyverse.org"}]
+        )
+        prefixed = Package(name="r-ggplot2", version="3.5.1", kind="formula", origin="brew")
+        m = match_package(prefixed, catalog, aliases={})
+        self.assertEqual(m.port_name, "r-ggplot2")
+        via_dep = Package(
+            name="ggplot2",
+            version="3.5.1",
+            kind="formula",
+            origin="brew",
+            homepage="https://ggplot2.tidyverse.org",
+            runtime_deps=["r"],
+        )
+        m2 = match_package(via_dep, catalog, aliases={})
+        self.assertEqual(m2.port_name, "r-ggplot2")
+
+    def test_rsync_is_not_an_r_package(self):
+        catalog = from_dicts(
+            [
+                {"name": "r-rsync", "version": "1.0", "homepage": ""},
+                {"name": "rsync", "version": "3.5.0", "homepage": "https://rsync.samba.org/"},
+            ]
+        )
+        pkg = Package(
+            name="rsync",
+            version="3.5.0",
+            kind="formula",
+            origin="brew",
+            homepage="https://rsync.samba.org/",
+        )
+        m = match_package(pkg, catalog, aliases={})
+        self.assertEqual(m.port_name, "rsync")
+        self.assertEqual(m.rule_id, "exact_name")
+
     def test_python_module_stem_from_dep(self):
         catalog = from_dicts([{"name": "py314-pygments", "version": "2.21.0", "homepage": ""}])
         pkg = Package(

@@ -23,6 +23,11 @@ from brew_to_ports.paths import data_file
 _VERSION_SPLIT = re.compile(r"[.\-]")
 _PY_DEP_RE = re.compile(r"^python@(\d+)\.(\d+)")
 _PY_PORT_RE = re.compile(r"^py(\d{3})-")
+_RUBY_DEP_RE = re.compile(r"^ruby@(\d+)\.(\d+)")
+_RUBY_PORT_RE = re.compile(r"^rb(\d{2})-")
+_PERL_DEP_RE = re.compile(r"^perl@(\d+)\.(\d+)")
+_PERL_PORT_RE = re.compile(r"^p5\.(\d+)-")
+_INTERPRETERS = {"python", "ruby", "perl", "node", "r", "php", "lua"}
 _NOISE_STEMS = {
     "full",
     "devel",
@@ -206,6 +211,45 @@ def _cascade(pkg, catalog: Catalog, aliases: Dict[str, str]):
     return None
 
 
+def ruby_series(pkg: Package) -> List[str]:
+    """ruby@3.3 -> 33 (MacPorts rb33-*)."""
+    series: List[str] = []
+    seen = set()
+    for dep in pkg.runtime_deps:
+        m = _RUBY_DEP_RE.match(dep)
+        if not m:
+            continue
+        compact = m.group(1) + m.group(2)
+        if compact not in seen:
+            seen.add(compact)
+            series.append(compact)
+    return series
+
+
+def perl_series(pkg: Package) -> List[str]:
+    """perl@5.34 -> 5.34 (MacPorts p5.34-*)."""
+    series: List[str] = []
+    seen = set()
+    for dep in pkg.runtime_deps:
+        m = _PERL_DEP_RE.match(dep)
+        if not m:
+            continue
+        if m.group(1) != "5":
+            continue
+        minor = m.group(2)
+        if minor not in seen:
+            seen.add(minor)
+            series.append(minor)
+    return series
+
+
+def _has_dep_base(pkg: Package, base: str) -> bool:
+    for dep in pkg.runtime_deps:
+        if dep == base or dep.startswith(base + "@"):
+            return True
+    return False
+
+
 def python_series(pkg: Package) -> List[str]:
     """Compact Python versions from brew runtime deps: python@3.14 -> 314."""
     series: List[str] = []
@@ -246,11 +290,41 @@ def stem_candidates(pkg: Package) -> List[str]:
                 out.append(f"py{series}-{rest}")
             out.append(f"py-{rest}")
 
-    elif python_series(pkg) and "@" not in name and not name.startswith("python"):
+    elif python_series(pkg) and "@" not in name and name.split("@")[0] not in _INTERPRETERS:
         # pygments, pytest — python-using formulae without a python- prefix
         for series in python_series(pkg):
             out.append(f"py{series}-{name}")
         out.append(f"py-{name}")
+
+    if name.startswith("ruby-"):
+        rest = name[len("ruby-") :].split("@", 1)[0]
+        if rest:
+            for series in ruby_series(pkg) or ("34", "33", "32"):
+                out.append(f"rb{series}-{rest}")
+            out.append(f"rb-{rest}")
+    elif ruby_series(pkg) and name.split("@")[0] not in _INTERPRETERS:
+        for series in ruby_series(pkg):
+            out.append(f"rb{series}-{name}")
+        out.append(f"rb-{name}")
+
+    if name.startswith("perl-"):
+        rest = name[len("perl-") :]
+        if rest:
+            for series in perl_series(pkg) or ("38", "34"):
+                out.append(f"p5.{series}-{rest}")
+            out.append(f"p5-{rest}")
+    elif perl_series(pkg) and name.split("@")[0] not in _INTERPRETERS:
+        for series in perl_series(pkg):
+            out.append(f"p5.{series}-{name}")
+        out.append(f"p5-{name}")
+
+    # CRAN: brew r-ggplot2 or a formula that depends on GNU R. Never rsync/readline.
+    if name.startswith("r-"):
+        rest = name[2:]
+        if rest:
+            out.append(f"r-{rest}")
+    elif _has_dep_base(pkg, "r") and name.split("@")[0] not in _INTERPRETERS:
+        out.append(f"r-{name}")
 
     for suffix in ("-full", "-complete"):
         if name.endswith(suffix):
@@ -270,6 +344,12 @@ def name_stems(name: str) -> set:
     n = re.sub(r"^python-", "", n)
     n = re.sub(r"^py\d*-", "", n)
     n = re.sub(r"^nodejs", "node", n)
+    n = re.sub(r"^ruby-", "", n)
+    n = re.sub(r"^rb\d*-", "", n)
+    n = re.sub(r"^perl-", "", n)
+    n = re.sub(r"^p5(?:\.\d+)?-", "", n)
+    if n.startswith("r-"):
+        n = n[2:]
     stems = set()
     for bit in re.split(r"[-_@.]", n):
         if not bit or bit.isdigit() or bit in _NOISE_STEMS:
@@ -302,6 +382,8 @@ def pick_homepage_family(pkg: Package, homes: List) -> Optional[tuple]:
         bonus = 0
         lname = port.name.lower()
         m = _PY_PORT_RE.match(lname)
+        rb = _RUBY_PORT_RE.match(lname)
+        p5 = _PERL_PORT_RE.match(lname)
         if series:
             if m and m.group(1) in series:
                 bonus -= 10 + (len(series) - series.index(m.group(1)))
@@ -311,6 +393,18 @@ def pick_homepage_family(pkg: Package, homes: List) -> Optional[tuple]:
                 bonus += 8
         elif m:
             bonus -= int(m.group(1)) / 1000.0  # prefer newer pyNNN if we don't know
+        rb_series = ruby_series(pkg)
+        if rb_series:
+            if rb and rb.group(1) in rb_series:
+                bonus -= 10
+            elif lname.startswith("rb-") and not rb:
+                bonus -= 1
+        p5_series = perl_series(pkg)
+        if p5_series:
+            if p5 and p5.group(1) in p5_series:
+                bonus -= 10
+            elif lname.startswith("p5-") and not p5:
+                bonus -= 1
         if pkg.name.endswith("-full") and lname.endswith("-devel"):
             bonus -= 5
         scored.append((r, bonus, len(lname), port, delta))
