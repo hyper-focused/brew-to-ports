@@ -8,12 +8,32 @@ Homebrew treats all Intel x86_64 systems as [Tier 3](https://docs.brew.sh/Suppor
 
 ## Requirements
 
-- Intel x86_64 macOS
-- Homebrew (`brew info --json=v2 --installed`)
-- Xcode Command Line Tools (`/usr/bin/python3`)
-- MacPorts optional (local PortIndex). Without it, pass `--portindex FILE` or you get inventory only.
+This runs on the Intel Mac being migrated. Not Apple Silicon, not Linux, not macOS 12.
 
-The wrapper and generated `migrate.sh` run under **`/bin/zsh`** and **`/usr/bin/python3`** so uninstalling brew’s zsh/python cannot kill the migrator. That is not a recommendation to *live* on Apple’s copies.
+**Host**
+- Intel x86_64
+- macOS **13 Ventura through 26 Tahoe**
+  - Ventura, Sonoma, Sequoia: the usual Intel cellar
+  - Tahoe: four Intel models still on Apple’s list ([support.apple.com/122867](https://support.apple.com/en-us/122867)) — 16" MacBook Pro 2019, 13" MacBook Pro 2020 (four Thunderbolt 3), 27" iMac 2020, Mac Pro 2019. `sw_vers` reports **26**, not 16.
+- `/bin/zsh` (Apple’s copy; the wrapper re-execs it)
+
+**Runtime (Xcode Command Line Tools, not a Python you installed)**
+- `xcode-select --install`
+- `/usr/bin/python3` **3.9.6** (what Apple CLT ships from Ventura on)
+- No pip, no venv, no `python.org` install, no Homebrew Python  
+  (`--allow-brew-python` exists; it is not the supported path)
+- Full Xcode.app is not required for the planner
+
+**Inventory**
+- Homebrew at the Intel prefix (`/usr/local`)
+- `brew info --json=v2 --installed` must work
+
+**Catalog**
+- MacPorts PortIndex: live install **or** `--portindex FILE`
+- MacPorts is optional to *plan*. `migrate.sh --apply` needs MacPorts at `/opt/local` and `sudo` for `port install`.
+- Intel Tahoe: MacPorts’ x86_64-26 bottle set is incomplete; more ports will build from source. The planner does not care.
+
+Ventura is the floor because Apple CLT Python is 3.9 from 13 on (Monterey CLT was 3.8.9) and the [current MacPorts tree](https://www.macports.org) targets 13+. Tahoe is Apple’s last Intel macOS; 27+ is Apple Silicon only and already fails the Intel gate. No extra Tahoe code path. The wrapper and generated `migrate.sh` pin `/bin/zsh` and `/usr/bin/python3` so uninstalling brew’s copies cannot kill the migrator. That is not a recommendation to *live* on Apple’s Python.
 
 Audience: people who already live in a terminal. The matcher and PATH scanner do what they can. They will not catch every keg, GNU `g-` prefix, variant, or homemade rc graph. Read the report.
 
@@ -54,7 +74,7 @@ No pip dependencies. Python 3.9+ stdlib only.
 
 ## What it will not do
 
-- Run on Apple Silicon or Linuxbrew
+- Run on Apple Silicon, Linuxbrew, or macOS 12 Monterey and older
 - Copy nginx.conf, databases, or TLS keys
 - Edit `~/.zshrc` / `~/.zsh_path` for you
 - Auto-migrate language runtimes (python/ruby/node/php) or toolchains (gcc/llvm)

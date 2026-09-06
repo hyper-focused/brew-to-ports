@@ -10,6 +10,13 @@ fi
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 export PYTHONPATH="${ROOT}/src${PYTHONPATH:+:$PYTHONPATH}"
 
+macos="$(/usr/bin/sw_vers -productVersion 2>/dev/null || true)"
+major="${macos%%.*}"
+if ! [[ "$major" == <-> ]] || (( major < 13 )); then
+  echo "brew-to-ports: macOS 13 Ventura or later required (got ${macos:-unknown})." >&2
+  exit 1
+fi
+
 SYS_PY="/usr/bin/python3"
 if [[ ! -x "$SYS_PY" ]]; then
   echo "brew-to-ports: need $SYS_PY (Xcode Command Line Tools)." >&2

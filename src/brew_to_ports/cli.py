@@ -8,7 +8,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Sequence, Tuple
 
 from brew_to_ports.adapters.brew import BrewError, brew_prefix, load_installed_json, python_is_from_brew
 from brew_to_ports.adapters.macports import load_catalog, ports_prefix
@@ -24,7 +24,20 @@ from brew_to_ports.render.report import render_report
 from brew_to_ports.render.script import render_script
 
 
+# Ventura: Apple CLT /usr/bin/python3 is 3.9.6; MacPorts current tree targets 13+.
+# Intel Tahoe is productVersion 26 — floor only; 27+ is Apple Silicon and fails require_intel.
+MIN_MACOS = (13, 0)
+MIN_PYTHON = (3, 9)
+
 INTEL_ONLY = "brew-to-ports: Intel x86_64 macOS only (got {arch}). Homebrew is still Tier 1 on Apple Silicon."
+TOO_OLD_MACOS = (
+    "brew-to-ports: macOS 13 Ventura or later required (got {version}). "
+    "Apple CLT /usr/bin/python3 is 3.9 from Ventura on, and the current MacPorts tree targets Ventura+."
+)
+TOO_OLD_PYTHON = (
+    "brew-to-ports: Python 3.9+ required (got {version}). "
+    "Install Xcode Command Line Tools so /usr/bin/python3 is 3.9.6+."
+)
 
 
 def require_intel(arch: Optional[str] = None) -> str:
@@ -39,6 +52,41 @@ def macos_version() -> str:
         return subprocess.check_output(["sw_vers", "-productVersion"], text=True).strip()
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
+
+
+def parse_macos_version(raw: str) -> Optional[Tuple[int, ...]]:
+    """Parse sw_vers -productVersion. Non-numeric (including 'unknown') → None."""
+    chunks: List[int] = []
+    for part in raw.strip().split("."):
+        if not part.isdigit():
+            return None if not chunks else tuple(chunks)
+        chunks.append(int(part))
+    return tuple(chunks) if chunks else None
+
+
+def macos_meets_min(raw: str, minimum: Tuple[int, ...] = MIN_MACOS) -> bool:
+    parsed = parse_macos_version(raw)
+    if parsed is None:
+        return False
+    n = max(len(parsed), len(minimum))
+    left = parsed + (0,) * (n - len(parsed))
+    right = minimum + (0,) * (n - len(minimum))
+    return left >= right
+
+
+def require_macos(version: Optional[str] = None) -> str:
+    raw = version if version is not None else macos_version()
+    if not macos_meets_min(raw):
+        raise SystemExit(TOO_OLD_MACOS.format(version=raw))
+    return raw
+
+
+def require_python(version_info: Optional[Sequence[int]] = None) -> Tuple[int, ...]:
+    info = tuple(version_info) if version_info is not None else sys.version_info[:3]
+    if info < MIN_PYTHON:
+        shown = ".".join(str(p) for p in info[:3]) if version_info is not None else sys.version.split()[0]
+        raise SystemExit(TOO_OLD_PYTHON.format(version=shown))
+    return info[:3]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -81,6 +129,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
     require_intel()
+    host_macos = require_macos()
     _check_runtime_python(allow_brew=args.allow_brew_python)
 
     try:
@@ -106,7 +155,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         catalog,
         allow_older_same_major=args.allow_older_same_major,
         arch=os.uname().machine,
-        macos=macos_version(),
+        macos=host_macos,
         brew_pfx=brew_prefix(),
         ports_pfx=ports_prefix(),
         path_file=dest,
@@ -167,6 +216,7 @@ def run_scan(
 
 
 def _check_runtime_python(allow_brew: bool) -> None:
+    require_python()
     exe = sys.executable
     if python_is_from_brew(exe) and not allow_brew:
         raise SystemExit(

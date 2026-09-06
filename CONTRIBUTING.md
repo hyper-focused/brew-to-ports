@@ -24,4 +24,4 @@ No live `brew` / `port` required for CI.
 
 ## Scope
 
-Intel x86_64 only. Generated `migrate.sh` must stay dry-run unless `--apply`. Do not write user rc files. Do not copy config/state.
+Intel x86_64, macOS 13 Ventura through 26 Tahoe (`sw_vers` 26 is valid; do not treat majors >15 as invalid). Generated `migrate.sh` must stay dry-run unless `--apply`. Do not write user rc files. Do not copy config/state.

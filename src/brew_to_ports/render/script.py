@@ -44,6 +44,13 @@ if [[ "$arch" != "x86_64" ]]; then
   exit 1
 fi
 
+macos="$(/usr/bin/sw_vers -productVersion 2>/dev/null || true)"
+major="${macos%%.*}"
+if ! [[ "$major" == <-> ]] || (( major < 13 )); then
+  echo "brew-to-ports: macOS 13 Ventura or later required (got ${macos:-unknown})." >&2
+  exit 1
+fi
+
 acked() {
   local name="$1"
   local x

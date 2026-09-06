@@ -242,6 +242,8 @@ class PlanSliceTests(unittest.TestCase):
         self.assertIn("exec /bin/zsh", script)
         self.assertIn("/usr/bin/uname -m", script)
         self.assertIn("x86_64", script)
+        self.assertIn("/usr/bin/sw_vers", script)
+        self.assertIn("major < 13", script)
         self.assertIn("/usr/local/bin/brew", script)
         self.assertIn("/opt/local/bin/port", script)
         self.assertIn("install_port wget", script)
@@ -268,6 +270,48 @@ class HostGateTests(unittest.TestCase):
         from brew_to_ports.cli import require_intel
 
         self.assertEqual(require_intel("x86_64"), "x86_64")
+
+    def test_monterey_fails(self):
+        from brew_to_ports.cli import require_macos
+
+        with self.assertRaises(SystemExit) as ctx:
+            require_macos("12.7.6")
+        self.assertIn("Ventura", str(ctx.exception))
+        self.assertIn("12.7.6", str(ctx.exception))
+
+    def test_ventura_ok(self):
+        from brew_to_ports.cli import require_macos
+
+        self.assertEqual(require_macos("13.0"), "13.0")
+        self.assertEqual(require_macos("13.7.8"), "13.7.8")
+
+    def test_intel_tahoe_productversion_26_ok(self):
+        from brew_to_ports.cli import require_macos
+
+        # Four Intel models run Tahoe; sw_vers is 26, not 16.
+        self.assertEqual(require_macos("26.0"), "26.0")
+        self.assertEqual(require_macos("26.5.1"), "26.5.1")
+
+    def test_unknown_macos_fails(self):
+        from brew_to_ports.cli import require_macos
+
+        with self.assertRaises(SystemExit) as ctx:
+            require_macos("unknown")
+        self.assertIn("unknown", str(ctx.exception))
+
+    def test_python_3_8_fails(self):
+        from brew_to_ports.cli import require_python
+
+        with self.assertRaises(SystemExit) as ctx:
+            require_python((3, 8, 9))
+        self.assertIn("3.9", str(ctx.exception))
+        self.assertIn("3.8.9", str(ctx.exception))
+
+    def test_python_3_9_ok(self):
+        from brew_to_ports.cli import require_python
+
+        self.assertEqual(require_python((3, 9, 6)), (3, 9, 6))
+        self.assertEqual(require_python((3, 12, 0)), (3, 12, 0))
 
 
 if __name__ == "__main__":
