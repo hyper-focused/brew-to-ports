@@ -25,7 +25,15 @@ from brew_to_ports.models import (
 )
 from brew_to_ports.paths import data_file
 
-AUTO_CONFIDENCE = {"exact", "alias", "versioned", "separator", "homepage"}
+AUTO_CONFIDENCE = {
+    "exact",
+    "alias",
+    "versioned",
+    "stem",
+    "separator",
+    "homepage",
+    "homepage_family",
+}
 AQUA_HINTS = {"aqua"}
 
 
