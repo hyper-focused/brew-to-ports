@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Dict, List, Sequence, Set
 
 from brew_to_ports.models import (
+    KIND_CASK,
     KIND_FORMULA,
     STATUS_EXCEPTION,
     STATUS_KEEP,

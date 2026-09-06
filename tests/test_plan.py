@@ -44,6 +44,30 @@ class PlanSliceTests(unittest.TestCase):
         self.assertNotIn("openssl@3", names)
         self.assertNotIn("git", names)
 
+    def test_unrequested_migrate_is_not_a_port_install(self):
+        """Regression: KIND_CASK must be imported; this line is skipped for requested formulae."""
+        from brew_to_ports.classify import classify_all
+        from brew_to_ports.inventory import from_brew_json
+        from brew_to_ports.plan import build_plan
+
+        payload = brew_payload()
+        for f in payload["formulae"]:
+            if f["name"] == "wget":
+                f["installed"][0]["installed_on_request"] = False
+        packages = from_brew_json(payload)
+        decisions = classify_all(packages, catalog())
+        plan = build_plan(
+            packages,
+            decisions,
+            arch="x86_64",
+            macos="15",
+            brew_prefix="/usr/local",
+            ports_prefix="/opt/local",
+            catalog_source="fixture",
+        )
+        installs = [op.port_name for op in plan.ops if op.action == "port_install"]
+        self.assertNotIn("wget", installs)
+
     def test_script_defaults_to_dry_run(self):
         script = render_script(self.plan)
         self.assertIn("APPLY=0", script)
