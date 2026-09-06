@@ -84,11 +84,13 @@ On a TTY, python / `python@*` families get `[m]igrate` / `[s]kip` / `[q]uit` (th
 ## What it does
 
 - Formulae and casks: requested vs dependency, bottle vs source, keg-only.
-- Match to MacPorts: exact name, aliases, `@version` compact (`php@8.5` → `php85`), stem maps (`python-foo` → `py314-foo`, `node@22` → `nodejs22`, `ruby-`/`perl-`/`r-` modules), homepage family pick (`ffmpeg-full` → `ffmpeg-devel`).
-- Keep-set: requested brew survivors (and casks) pin their brew runtime graph. Unrequested leftovers of migrators can go; MacPorts already pulled what it needs.
+- Match to MacPorts: exact name, aliases, `@version` compact (`php@8.5` → `php85`), stem maps (`python-foo` → `py314-foo`, `node@22` → `nodejs22`, `ruby-`/`perl-`/`r-` modules), homepage family pick (`ffmpeg-full` → `ffmpeg-devel`) only when names share a non-generic stem.
+- Keep-set: requested brew survivors (and casks) pin their brew runtime graph. Unrequested leftovers of migrators can go; MacPorts already pulled what it needs. Service/runtime/toolchain exceptions are not leftover-uninstalled.
+- Python family cutover (plan-time). php/node/ruby stay dual-stack until that slice exists.
+- `--try-source` overlay Portfiles for some unmatched formulae (not cmake/rust/PyPI).
 - PATH advice from `.zshenv` / `.zprofile` / sourced files under `$HOME` (not antidote/Cellar).
 - Best-effort `/usr/local` → `/opt/local` rewrites for aliases and `LDFLAGS`/`CPPFLAGS`.
-- Generated `migrate.sh`: dry-run default, restart-safe skips, `brew services stop` before uninstall, `brew autoremove` at the end.
+- Generated `migrate.sh`: dry-run default, restart-safe skips, `brew services stop` before uninstall, `brew autoremove` at the end. `sudo` only `port`.
 
 ## What it will not do
 
@@ -104,8 +106,9 @@ On a TTY, python / `python@*` families get `[m]igrate` / `[s]kip` / `[q]uit` (th
 brew-to-ports          # zsh wrapper
 src/brew_to_ports/     # stdlib Python
 data/aliases.json      # one-off brew → port names
-data/exceptions.json   # runtime / toolchain / stateful categories
+data/exceptions.json   # runtime / toolchain / service / stateful
 tests/                 # fixtures, no live brew required
+STATUS.md              # shipped / not doing / next
 ```
 
 ## Development
@@ -114,7 +117,7 @@ tests/                 # fixtures, no live brew required
 PYTHONPATH=src python3 -m unittest discover -s tests -q
 ```
 
-CI runs that on Ubuntu (fixture-only). Matching rules: see [CONTRIBUTING.md](CONTRIBUTING.md).
+CI runs that on Ubuntu (fixture-only). Matching rules: [CONTRIBUTING.md](CONTRIBUTING.md). Progress: [STATUS.md](STATUS.md).
 
 ## License
 
