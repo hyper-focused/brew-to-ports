@@ -6,7 +6,13 @@ from brew_to_ports.models import Plan
 
 HEADER = r'''#!/bin/zsh
 # brew-to-ports migrate.sh — dry-run unless --apply. Does not copy configs.
+# Interpreter is /bin/zsh so brew zsh can be uninstalled mid-run.
 set -euo pipefail
+
+if [[ -z "${BREW_TO_PORTS_SYS_ZSH:-}" ]]; then
+  export BREW_TO_PORTS_SYS_ZSH=1
+  exec /bin/zsh "$0" "$@"
+fi
 
 APPLY=0
 typeset -a ACKED
@@ -32,7 +38,7 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-arch="$(uname -m)"
+arch="$(/usr/bin/uname -m)"
 if [[ "$arch" != "x86_64" ]]; then
   echo "brew-to-ports: Intel x86_64 macOS only (got $arch)." >&2
   exit 1
@@ -64,7 +70,14 @@ fi
 
 
 def render_script(plan: Plan) -> str:
+    brew = f"{plan.brew_prefix.rstrip('/')}/bin/brew"
+    port = f"{plan.ports_prefix.rstrip('/')}/bin/port"
+    sudo = "/usr/bin/sudo"
     lines = [HEADER.rstrip(), ""]
+    lines.append(f"BREW={_sh_single(brew)}")
+    lines.append(f"PORT={_sh_single(port)}")
+    lines.append(f"SUDO={_sh_single(sudo)}")
+    lines.append("")
     installs = [op for op in plan.ops if op.action == "port_install"]
     uninstalls = [op for op in plan.ops if op.action == "brew_uninstall"]
 
@@ -75,20 +88,20 @@ def render_script(plan: Plan) -> str:
             lines.append(f"#   {cfg.brew_package}: {cfg.brew_path} -> {cfg.guessed_ports_path}{extra}")
         lines.append("")
 
-    lines.append("run sudo port selfupdate")
+    lines.append('run "$SUDO" "$PORT" selfupdate')
     lines.append("")
 
     for op in installs:
         lines.append(f"echo '--> port install {op.port_name} (from brew {op.brew_name})'")
-        lines.append(f"run sudo port install {op.port_name}")
-        lines.append(f"run port -q installed {op.port_name}")
+        lines.append(f'run "$SUDO" "$PORT" install {op.port_name}')
+        lines.append(f'run "$PORT" -q installed {op.port_name}')
         lines.append("")
 
     for op in uninstalls:
         if op.hold_uninstall:
             lines.append(f"echo '--> brew uninstall {op.brew_name} (held until --i-acked-config {op.brew_name})'")
             lines.append(f'if acked "{op.brew_name}"; then')
-            lines.append(f"  run brew uninstall {op.brew_name}")
+            lines.append(f'  run "$BREW" uninstall {op.brew_name}')
             lines.append("else")
             lines.append(
                 f'  echo "HOLD: {op.brew_name} has config/state; pass --i-acked-config {op.brew_name} to uninstall brew copy"'
@@ -96,9 +109,13 @@ def render_script(plan: Plan) -> str:
             lines.append("fi")
         else:
             lines.append(f"echo '--> brew uninstall {op.brew_name}'")
-            lines.append(f"run brew uninstall {op.brew_name}")
+            lines.append(f'run "$BREW" uninstall {op.brew_name}')
         lines.append("")
 
     lines.append('echo "done."')
     lines.append("")
     return "\n".join(lines)
+
+
+def _sh_single(value: str) -> str:
+    return "'" + value.replace("'", "'\\''") + "'"

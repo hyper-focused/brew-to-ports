@@ -72,8 +72,11 @@ class PlanSliceTests(unittest.TestCase):
         script = render_script(self.plan)
         self.assertIn("APPLY=0", script)
         self.assertIn("DRY-RUN", script)
-        self.assertIn("uname -m", script)
+        self.assertIn("exec /bin/zsh", script)
+        self.assertIn("/usr/bin/uname -m", script)
         self.assertIn("x86_64", script)
+        self.assertIn("/usr/local/bin/brew", script)
+        self.assertIn("/opt/local/bin/port", script)
         self.assertIn("port install wget", script)
 
     def test_portindex_sample_roundtrip(self):

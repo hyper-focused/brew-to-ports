@@ -17,7 +17,7 @@ Audience: people who already live in a terminal. The scanner does what it can wi
 
 `--path-file` writes `~/.zsh_path.brew-to-ports` (one dir per line). The report lists `source` / `export PATH` / `brew shellenv` lines to comment, plus zsh/bash load one-liners.
 
-Requires Intel x86_64, `brew info --json=v2 --installed`, and `/usr/bin/python3` (not Homebrew’s). MacPorts is optional if you pass `--portindex`.
+Requires Intel x86_64, `brew info --json=v2 --installed`, and `/usr/bin/python3` (not Homebrew’s). MacPorts is optional if you pass `--portindex`. The tool runs under `/bin/zsh` and `/usr/bin/python3` so brew’s zsh/python can be uninstalled without killing the migrator. That is not a recommendation to *live* on Apple’s copies.
 
 ## Layout
 

@@ -1,40 +1,30 @@
 #!/bin/zsh
-# Find a non-Homebrew python3 and run brew-to-ports.
+# Run under Apple /bin/zsh and /usr/bin/python3 so brew zsh/python can be uninstalled.
 set -euo pipefail
+
+if [[ -z "${BREW_TO_PORTS_SYS_ZSH:-}" ]]; then
+  export BREW_TO_PORTS_SYS_ZSH=1
+  exec /bin/zsh "$0" "$@"
+fi
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 export PYTHONPATH="${ROOT}/src${PYTHONPATH:+:$PYTHONPATH}"
 
-brew_prefix=""
-if command -v brew >/dev/null 2>&1; then
-  brew_prefix="$(brew --prefix 2>/dev/null || true)"
-fi
-
-is_brew_python() {
-  local exe="$1"
-  local resolved
-  resolved="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$exe" 2>/dev/null || echo "$exe")"
-  [[ -n "$brew_prefix" && "$resolved" == "$brew_prefix"* ]]
-}
-
-pick_python() {
-  local cand
-  for cand in /usr/bin/python3 "$(command -v python3 || true)"; do
-    [[ -n "$cand" && -x "$cand" ]] || continue
-    if is_brew_python "$cand"; then
-      continue
-    fi
-    echo "$cand"
-    return 0
-  done
-  return 1
-}
-
-PYTHON="$(pick_python || true)"
-if [[ -z "${PYTHON}" ]]; then
-  echo "brew-to-ports: no non-Homebrew python3 found (want /usr/bin/python3)." >&2
-  echo "Install Xcode Command Line Tools, or pass the module via /usr/bin/python3 -m brew_to_ports" >&2
+SYS_PY="/usr/bin/python3"
+if [[ ! -x "$SYS_PY" ]]; then
+  echo "brew-to-ports: need $SYS_PY (Xcode Command Line Tools)." >&2
   exit 1
 fi
 
-exec "$PYTHON" -m brew_to_ports "$@"
+# Resolve with system python, never PATH python3 (that may be brew).
+resolved="$("$SYS_PY" -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$SYS_PY")"
+brew_prefix=""
+if [[ -x /usr/local/bin/brew ]]; then
+  brew_prefix="$(/usr/local/bin/brew --prefix 2>/dev/null || true)"
+fi
+if [[ -n "$brew_prefix" && "$resolved" == "$brew_prefix"* ]]; then
+  echo "brew-to-ports: $SYS_PY resolves into Homebrew ($resolved). Refusing." >&2
+  exit 1
+fi
+
+exec "$SYS_PY" -m brew_to_ports "$@"
