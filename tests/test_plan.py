@@ -44,6 +44,97 @@ class PlanSliceTests(unittest.TestCase):
         self.assertNotIn("openssl@3", names)
         self.assertNotIn("git", names)
 
+    def test_migrating_parent_does_not_pin_its_brew_dep(self):
+        """A migrates; unrequested B was only a brew dep of A → B is leftover, not keep."""
+        from brew_to_ports.models import Decision, KIND_FORMULA, Package
+        from brew_to_ports.plan import build_plan
+
+        wget = Package(
+            name="wget",
+            version="1.25.0",
+            kind=KIND_FORMULA,
+            origin="brew",
+            requested=True,
+            runtime_deps=["libfoo"],
+        )
+        libfoo = Package(
+            name="libfoo",
+            version="1.0",
+            kind=KIND_FORMULA,
+            origin="brew",
+            requested=False,
+            runtime_deps=[],
+        )
+        decisions = [
+            Decision(brew_name="wget", status=STATUS_MIGRATE, match=None, reasons=[], requested=True),
+            Decision(
+                brew_name="libfoo",
+                status=STATUS_KEEP,
+                match=None,
+                reasons=["no equivalent"],
+                requested=False,
+            ),
+        ]
+        # match needed for port_install
+        from brew_to_ports.models import Match
+
+        decisions[0].match = Match(
+            brew_name="wget",
+            port_name="wget",
+            confidence="exact",
+            rule_id="exact_name",
+            version_delta="equal",
+        )
+        plan = build_plan(
+            [wget, libfoo],
+            decisions,
+            arch="x86_64",
+            macos="15",
+            brew_prefix="/usr/local",
+            ports_prefix="/opt/local",
+        )
+        self.assertNotIn("libfoo", plan.keep_set)
+        uninstalls = [op.brew_name for op in plan.ops if op.action == "brew_uninstall"]
+        self.assertIn("wget", uninstalls)
+        self.assertIn("libfoo", uninstalls)
+        self.assertEqual(uninstalls.index("wget") < uninstalls.index("libfoo"), True)
+
+    def test_keeper_still_pins_shared_dep(self):
+        from brew_to_ports.models import Decision, KIND_FORMULA, Match, Package
+        from brew_to_ports.plan import build_plan
+
+        wget = Package(
+            name="wget", version="1", kind=KIND_FORMULA, origin="brew",
+            requested=True, runtime_deps=["openssl@3"],
+        )
+        git = Package(
+            name="git", version="1", kind=KIND_FORMULA, origin="brew",
+            requested=True, runtime_deps=["openssl@3"],
+        )
+        ossl = Package(
+            name="openssl@3", version="3", kind=KIND_FORMULA, origin="brew",
+            requested=False, runtime_deps=[],
+        )
+        decisions = [
+            Decision(
+                brew_name="wget", status=STATUS_MIGRATE, requested=True, match=Match(
+                    brew_name="wget", port_name="wget", confidence="exact",
+                    rule_id="exact_name", version_delta="equal",
+                ), reasons=[],
+            ),
+            Decision(brew_name="git", status=STATUS_KEEP, requested=True, match=None, reasons=["no equivalent"]),
+            Decision(brew_name="openssl@3", status=STATUS_MIGRATE, requested=False, match=None, reasons=[]),
+        ]
+        plan = build_plan(
+            [wget, git, ossl], decisions,
+            arch="x86_64", macos="15", brew_prefix="/usr/local", ports_prefix="/opt/local",
+        )
+        self.assertIn("openssl@3", plan.keep_set)
+        uninstalls = [op.brew_name for op in plan.ops if op.action == "brew_uninstall"]
+        self.assertIn("wget", uninstalls)
+        self.assertNotIn("openssl@3", uninstalls)
+        self.assertNotIn("git", uninstalls)
+
     def test_unrequested_migrate_is_not_a_port_install(self):
         """Regression: KIND_CASK must be imported; this line is skipped for requested formulae."""
         from brew_to_ports.classify import classify_all

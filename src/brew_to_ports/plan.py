@@ -33,9 +33,17 @@ def build_plan(
 
     keep_set = _expand_keep_set(packages, decisions)
     for decision in decisions:
+        pkg = by_name.get(decision.brew_name)
         if decision.status == STATUS_MIGRATE and decision.brew_name in keep_set:
             decision.status = STATUS_KEEP
             decision.reasons.append("keep_because_dep_of_keeper")
+        elif (
+            pkg is not None
+            and not pkg.requested
+            and pkg.kind == KIND_FORMULA
+            and decision.brew_name not in keep_set
+        ):
+            decision.reasons.append("leftover_brew_dep_no_remaining_keeper")
 
     ops: List[PlanOp] = []
     for decision in decisions:
@@ -90,12 +98,22 @@ def build_plan(
 
 
 def _expand_keep_set(packages: Sequence[Package], decisions: Sequence[Decision]) -> Set[str]:
+    """Seed from packages that *remain on brew by choice* (requested keep/exception, casks).
+
+    Unrequested formulae are not seeds. If their last brew dependent migrates, they
+    are leftovers: MacPorts already pulled what it needs, brew copies can go.
+    """
+    by_name: Dict[str, Package] = {p.name: p for p in packages}
     deps: Dict[str, List[str]] = {p.name: list(p.runtime_deps) for p in packages}
-    keep: Set[str] = {
-        d.brew_name
-        for d in decisions
-        if d.status in (STATUS_KEEP, STATUS_EXCEPTION)
-    }
+    keep: Set[str] = set()
+    for d in decisions:
+        if d.status not in (STATUS_KEEP, STATUS_EXCEPTION):
+            continue
+        pkg = by_name.get(d.brew_name)
+        if pkg is None:
+            continue
+        if pkg.requested or pkg.kind == KIND_CASK:
+            keep.add(d.brew_name)
     changed = True
     while changed:
         changed = False
@@ -126,10 +144,8 @@ def _uninstall_order(
         d = decision_map.get(p.name)
         if d is None:
             continue
-        if d.status == STATUS_MIGRATE:
-            eligible.add(p.name)
-        elif not p.requested and d.status != STATUS_EXCEPTION:
-            # leftover brew dep after its dependents migrated
+        if d.status == STATUS_MIGRATE or not p.requested:
+            # requested migrators, plus unrequested leftovers no keeper still needs
             eligible.add(p.name)
     dependents: Dict[str, Set[str]] = {n: set() for n in eligible}
     for p in packages:
