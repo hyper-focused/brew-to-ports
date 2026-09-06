@@ -115,6 +115,7 @@ class PlanOp:
     port_name: str = ""
     hold_uninstall: bool = False
     comment: str = ""
+    kind: str = KIND_FORMULA
 
 
 @dataclass

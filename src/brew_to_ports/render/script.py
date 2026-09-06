@@ -78,6 +78,17 @@ def render_script(plan: Plan) -> str:
     lines.append(f"PORT={_sh_single(port)}")
     lines.append(f"SUDO={_sh_single(sudo)}")
     lines.append("")
+    lines.append(HELPERS.rstrip())
+    lines.append("")
+    path_file = ""
+    if plan.path_advice and plan.path_advice.path_file:
+        path_file = plan.path_advice.path_file
+    lines.append(
+        "# PATH still prefers brew until you load "
+        + (path_file or "~/.zsh_path.brew-to-ports")
+        + " (see scan report). This script does not edit rc files."
+    )
+    lines.append("")
     installs = [op for op in plan.ops if op.action == "port_install"]
     uninstalls = [op for op in plan.ops if op.action == "brew_uninstall"]
 
@@ -93,15 +104,15 @@ def render_script(plan: Plan) -> str:
 
     for op in installs:
         lines.append(f"echo '--> port install {op.port_name} (from brew {op.brew_name})'")
-        lines.append(f'run "$SUDO" "$PORT" install {op.port_name}')
-        lines.append(f'run "$PORT" -q installed {op.port_name}')
+        lines.append(f'install_port {op.port_name}')
         lines.append("")
 
     for op in uninstalls:
+        kind = op.kind or "formula"
         if op.hold_uninstall:
             lines.append(f"echo '--> brew uninstall {op.brew_name} (held until --i-acked-config {op.brew_name})'")
             lines.append(f'if acked "{op.brew_name}"; then')
-            lines.append(f'  run "$BREW" uninstall {op.brew_name}')
+            lines.append(f'  uninstall_brew {op.brew_name} {kind}')
             lines.append("else")
             lines.append(
                 f'  echo "HOLD: {op.brew_name} has config/state; pass --i-acked-config {op.brew_name} to uninstall brew copy"'
@@ -109,9 +120,12 @@ def render_script(plan: Plan) -> str:
             lines.append("fi")
         else:
             lines.append(f"echo '--> brew uninstall {op.brew_name}'")
-            lines.append(f'run "$BREW" uninstall {op.brew_name}')
+            lines.append(f"uninstall_brew {op.brew_name} {kind}")
         lines.append("")
 
+    lines.append('echo "--> brew autoremove (unrequested leaves brew still sees)"')
+    lines.append("autoremove_brew")
+    lines.append("")
     lines.append('echo "done."')
     lines.append("")
     return "\n".join(lines)
@@ -119,3 +133,67 @@ def render_script(plan: Plan) -> str:
 
 def _sh_single(value: str) -> str:
     return "'" + value.replace("'", "'\\''") + "'"
+
+
+HELPERS = r'''
+port_has() {
+  "$PORT" -q installed "$1" >/dev/null 2>&1
+}
+
+brew_has_formula() {
+  "$BREW" list --formula "$1" >/dev/null 2>&1
+}
+
+brew_has_cask() {
+  "$BREW" list --cask "$1" >/dev/null 2>&1
+}
+
+stop_brew_service() {
+  local name="$1"
+  local st
+  st="$("$BREW" services list 2>/dev/null | awk -v n="$name" '$1==n {print $2; exit}')" || return 0
+  [[ "$st" == "started" || "$st" == "error" ]] || return 0
+  run "$BREW" services stop "$name" || true
+}
+
+install_port() {
+  local name="$1"
+  if [[ "$APPLY" -eq 1 ]] && port_has "$name"; then
+    echo "skip: port $name already installed"
+    return 0
+  fi
+  run "$SUDO" "$PORT" install "$name"
+  if [[ "$APPLY" -eq 1 ]]; then
+    port_has "$name"
+  else
+    run "$PORT" -q installed "$name"
+  fi
+}
+
+uninstall_brew() {
+  local name="$1"
+  local kind="${2:-formula}"
+  if [[ "$kind" == "cask" ]]; then
+    if [[ "$APPLY" -eq 1 ]] && ! brew_has_cask "$name"; then
+      echo "skip: brew cask $name not installed"
+      return 0
+    fi
+    run "$BREW" uninstall --cask "$name"
+    return 0
+  fi
+  if [[ "$APPLY" -eq 1 ]] && ! brew_has_formula "$name"; then
+    echo "skip: brew $name not installed"
+    return 0
+  fi
+  stop_brew_service "$name"
+  run "$BREW" uninstall "$name"
+}
+
+autoremove_brew() {
+  if [[ "$APPLY" -eq 1 ]]; then
+    run "$BREW" autoremove || true
+  else
+    run "$BREW" autoremove
+  fi
+}
+'''

@@ -135,6 +135,82 @@ class PlanSliceTests(unittest.TestCase):
         self.assertNotIn("openssl@3", uninstalls)
         self.assertNotIn("git", uninstalls)
 
+    def test_cask_depends_on_pins_formula(self):
+        from brew_to_ports.models import KIND_CASK, Decision, KIND_FORMULA, Match, Package
+        from brew_to_ports.plan import build_plan
+
+        cask = Package(
+            name="gpg-suite",
+            version="1",
+            kind=KIND_CASK,
+            origin="brew",
+            requested=True,
+            runtime_deps=["gnupg"],
+        )
+        gnupg = Package(
+            name="gnupg",
+            version="2",
+            kind=KIND_FORMULA,
+            origin="brew",
+            requested=False,
+            runtime_deps=[],
+        )
+        decisions = [
+            Decision(brew_name="gpg-suite", status=STATUS_KEEP, requested=True, match=None, reasons=["cask"], kind=KIND_CASK),
+            Decision(
+                brew_name="gnupg",
+                status=STATUS_MIGRATE,
+                requested=False,
+                match=Match(
+                    brew_name="gnupg", port_name="gnupg", confidence="exact",
+                    rule_id="exact_name", version_delta="equal",
+                ),
+                reasons=[],
+            ),
+        ]
+        plan = build_plan(
+            [cask, gnupg], decisions,
+            arch="x86_64", macos="15", brew_prefix="/usr/local", ports_prefix="/opt/local",
+        )
+        self.assertIn("gnupg", plan.keep_set)
+        uninstalls = [op.brew_name for op in plan.ops if op.action == "brew_uninstall"]
+        self.assertNotIn("gnupg", uninstalls)
+
+    def test_migrating_cask_emits_cask_uninstall(self):
+        from brew_to_ports.models import KIND_CASK, Decision, Match, Package
+        from brew_to_ports.plan import build_plan
+
+        cask = Package(
+            name="transmission",
+            version="4",
+            kind=KIND_CASK,
+            origin="brew",
+            requested=True,
+            runtime_deps=[],
+        )
+        decisions = [
+            Decision(
+                brew_name="transmission",
+                status=STATUS_MIGRATE,
+                requested=True,
+                kind=KIND_CASK,
+                match=Match(
+                    brew_name="transmission", port_name="transmission",
+                    confidence="exact", rule_id="exact_name", version_delta="equal",
+                ),
+                reasons=[],
+            ),
+        ]
+        plan = build_plan(
+            [cask], decisions,
+            arch="x86_64", macos="15", brew_prefix="/usr/local", ports_prefix="/opt/local",
+        )
+        uninstalls = [op for op in plan.ops if op.action == "brew_uninstall"]
+        self.assertEqual(len(uninstalls), 1)
+        self.assertEqual(uninstalls[0].kind, KIND_CASK)
+        script = render_script(plan)
+        self.assertIn("uninstall_brew transmission cask", script)
+
     def test_unrequested_migrate_is_not_a_port_install(self):
         """Regression: KIND_CASK must be imported; this line is skipped for requested formulae."""
         from brew_to_ports.classify import classify_all
@@ -168,7 +244,11 @@ class PlanSliceTests(unittest.TestCase):
         self.assertIn("x86_64", script)
         self.assertIn("/usr/local/bin/brew", script)
         self.assertIn("/opt/local/bin/port", script)
-        self.assertIn("port install wget", script)
+        self.assertIn("install_port wget", script)
+        self.assertIn("uninstall_brew wget", script)
+        self.assertIn("stop_brew_service", script)
+        self.assertIn("autoremove_brew", script)
+        self.assertIn("already installed", script)
 
     def test_portindex_sample_roundtrip(self):
         path = write_portindex_sample()

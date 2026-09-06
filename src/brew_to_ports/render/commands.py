@@ -36,7 +36,11 @@ def render_commands(plan: Plan) -> str:
                     f"(./migrate.sh --apply --i-acked-config {op.brew_name})"
                 )
             else:
-                lines.append(f"brew uninstall {op.brew_name}")
+                if op.kind == "cask":
+                    lines.append(f"brew uninstall --cask {op.brew_name}")
+                else:
+                    lines.append(f"brew uninstall {op.brew_name}")
+        lines.append("brew autoremove")
         lines.append("")
     if plan.path_advice:
         for raw in snippet(plan.path_advice).splitlines():

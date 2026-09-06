@@ -63,12 +63,14 @@ def build_plan(
                 brew_name=pkg.name,
                 port_name=port,
                 hold_uninstall=decision.hold_uninstall,
+                kind=pkg.kind,
             )
         )
 
     uninstallable = _uninstall_order(packages, keep_set, decision_map)
     for name in uninstallable:
         decision = decision_map[name]
+        pkg = by_name.get(name)
         ops.append(
             PlanOp(
                 action="brew_uninstall",
@@ -76,6 +78,7 @@ def build_plan(
                 port_name=(decision.match.port_name if decision.match else ""),
                 hold_uninstall=decision.hold_uninstall,
                 comment="held: ack config/state first" if decision.hold_uninstall else "",
+                kind=pkg.kind if pkg else KIND_FORMULA,
             )
         )
 
@@ -131,11 +134,7 @@ def _uninstall_order(
     decision_map: Dict[str, Decision],
 ) -> List[str]:
     """Leaves first: formulae that migrated (or leftover deps of migrators) and are not keepers."""
-    remaining = {
-        p.name
-        for p in packages
-        if p.kind == KIND_FORMULA and p.name not in keep_set
-    }
+    remaining = {p.name for p in packages if p.name not in keep_set}
     # Only uninstall if classified migrate, or unrequested leftover of a migrator.
     eligible: Set[str] = set()
     for p in packages:
