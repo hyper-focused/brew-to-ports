@@ -21,6 +21,8 @@ resolved="$("$SYS_PY" -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "
 brew_prefix=""
 if [[ -x /usr/local/bin/brew ]]; then
   brew_prefix="$(/usr/local/bin/brew --prefix 2>/dev/null || true)"
+elif command -v brew >/dev/null 2>&1; then
+  brew_prefix="$(brew --prefix 2>/dev/null || true)"
 fi
 if [[ -n "$brew_prefix" && "$resolved" == "$brew_prefix"* ]]; then
   echo "brew-to-ports: $SYS_PY resolves into Homebrew ($resolved). Refusing." >&2
