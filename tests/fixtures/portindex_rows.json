@@ -1,0 +1,30 @@
+[
+  {
+    "name": "wget",
+    "version": "1.25.0",
+    "homepage": "https://www.gnu.org/software/wget/",
+    "categories": ["net"],
+    "description": "Internet file retriever"
+  },
+  {
+    "name": "openssl3",
+    "version": "3.4.1",
+    "homepage": "https://www.openssl.org/",
+    "categories": ["devel"],
+    "description": "TLS/SSL and crypto library"
+  },
+  {
+    "name": "python312",
+    "version": "3.12.8",
+    "homepage": "https://www.python.org/",
+    "categories": ["lang"],
+    "description": "Python 3.12"
+  },
+  {
+    "name": "jq",
+    "version": "1.7.1",
+    "homepage": "https://jqlang.github.io/jq/",
+    "categories": ["sysutils"],
+    "description": "JSON processor"
+  }
+]

@@ -1,0 +1,40 @@
+#!/bin/zsh
+# Find a non-Homebrew python3 and run brew-to-ports.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+export PYTHONPATH="${ROOT}/src${PYTHONPATH:+:$PYTHONPATH}"
+
+brew_prefix=""
+if command -v brew >/dev/null 2>&1; then
+  brew_prefix="$(brew --prefix 2>/dev/null || true)"
+fi
+
+is_brew_python() {
+  local exe="$1"
+  local resolved
+  resolved="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$exe" 2>/dev/null || echo "$exe")"
+  [[ -n "$brew_prefix" && "$resolved" == "$brew_prefix"* ]]
+}
+
+pick_python() {
+  local cand
+  for cand in /usr/bin/python3 "$(command -v python3 || true)"; do
+    [[ -n "$cand" && -x "$cand" ]] || continue
+    if is_brew_python "$cand"; then
+      continue
+    fi
+    echo "$cand"
+    return 0
+  done
+  return 1
+}
+
+PYTHON="$(pick_python || true)"
+if [[ -z "${PYTHON}" ]]; then
+  echo "brew-to-ports: no non-Homebrew python3 found (want /usr/bin/python3)." >&2
+  echo "Install Xcode Command Line Tools, or pass the module via /usr/bin/python3 -m brew_to_ports" >&2
+  exit 1
+fi
+
+exec "$PYTHON" -m brew_to_ports "$@"

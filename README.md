@@ -27,15 +27,17 @@ It does **not** silently rewrite your machine.
 - Intel x86_64 macOS
 - Homebrew (`brew info --json=v2 --installed`)
 - `/usr/bin/python3` (Command Line Tools). Do not use Homebrew’s Python as the runtime.
-- MacPorts optional for a local PortIndex; otherwise a PortIndex is fetched and cached.
+- MacPorts optional for a local PortIndex; `--portindex FILE` works without it.
 
 ## Usage
 
 ```sh
 ./brew-to-ports                  # scan (no changes)
-./brew-to-ports --script         # also write migrate.sh (still dry-run)
+./brew-to-ports --script --commands
 ./migrate.sh                     # print what would happen
 ./migrate.sh --apply             # actually install ports / uninstall brew formulae
+
+PATH advice follows `source` / `.` includes (for example `~/.zsh_path` sourced from `~/.zshrc`) and tells you which file actually sets PATH. It still will not edit those files.
 ```
 
 ## Layout

@@ -1,0 +1,68 @@
+{
+  "categories": {
+    "toolchain": [
+      "gcc",
+      "gcc@*",
+      "llvm",
+      "llvm@*",
+      "clang",
+      "clang-format",
+      "clang-tidy"
+    ],
+    "runtime": [
+      "python",
+      "python@*",
+      "ruby",
+      "ruby@*",
+      "node",
+      "node@*",
+      "perl",
+      "php",
+      "php@*",
+      "lua",
+      "luajit"
+    ],
+    "crypto_lib": [
+      "openssl",
+      "openssl@*",
+      "readline",
+      "icu4c",
+      "icu4c@*",
+      "sqlite",
+      "gettext",
+      "libressl",
+      "gnutls"
+    ],
+    "service": [
+      "unbound",
+      "dnsmasq",
+      "nginx",
+      "httpd",
+      "redis",
+      "memcached",
+      "mysql",
+      "mysql@*",
+      "postgresql",
+      "postgresql@*",
+      "postfix",
+      "dovecot"
+    ]
+  },
+  "stateful": [
+    "mysql",
+    "mysql@*",
+    "mariadb",
+    "postgresql",
+    "postgresql@*",
+    "nginx",
+    "httpd",
+    "unbound",
+    "dnsmasq",
+    "postfix",
+    "dovecot",
+    "redis",
+    "php",
+    "php@*"
+  ],
+  "aqua_categories": ["aqua", "sysutils"]
+}

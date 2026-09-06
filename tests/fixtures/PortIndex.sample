@@ -1,0 +1,8 @@
+wget 122
+name wget version 1.25.0 homepage https://www.gnu.org/software/wget/ description {Internet file retriever} categories net
+openssl3 120
+name openssl3 version 3.4.1 homepage https://www.openssl.org/ description {TLS/SSL and crypto library} categories devel
+python312 105
+name python312 version 3.12.8 homepage https://www.python.org/ description {Python 3.12} categories lang
+jq 109
+name jq version 1.7.1 homepage https://jqlang.github.io/jq/ description {JSON processor} categories sysutils

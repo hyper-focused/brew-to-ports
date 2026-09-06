@@ -1,0 +1,109 @@
+{
+  "formulae": [
+    {
+      "name": "wget",
+      "tap": "homebrew/core",
+      "desc": "Internet file retriever",
+      "homepage": "https://www.gnu.org/software/wget/",
+      "versions": { "stable": "1.25.0" },
+      "keg_only": false,
+      "linked_keg": "1.25.0",
+      "installed": [
+        {
+          "version": "1.25.0",
+          "poured_from_bottle": true,
+          "installed_on_request": true,
+          "installed_as_dependency": false,
+          "runtime_dependencies": [
+            { "full_name": "openssl@3", "version": "3.4.1" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "openssl@3",
+      "tap": "homebrew/core",
+      "desc": "Cryptography and SSL/TLS Toolkit",
+      "homepage": "https://openssl-library.org/",
+      "versions": { "stable": "3.4.1" },
+      "keg_only": true,
+      "linked_keg": "3.4.1",
+      "installed": [
+        {
+          "version": "3.4.1",
+          "poured_from_bottle": true,
+          "installed_on_request": false,
+          "installed_as_dependency": true,
+          "runtime_dependencies": []
+        }
+      ]
+    },
+    {
+      "name": "git",
+      "tap": "homebrew/core",
+      "desc": "Distributed revision control system",
+      "homepage": "https://git-scm.com",
+      "versions": { "stable": "2.49.0" },
+      "keg_only": false,
+      "linked_keg": "2.49.0",
+      "installed": [
+        {
+          "version": "2.49.0",
+          "poured_from_bottle": true,
+          "installed_on_request": true,
+          "installed_as_dependency": false,
+          "runtime_dependencies": [
+            { "full_name": "openssl@3", "version": "3.4.1" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "python@3.12",
+      "tap": "homebrew/core",
+      "desc": "Interpreted, interactive, object-oriented programming language",
+      "homepage": "https://www.python.org/",
+      "versions": { "stable": "3.12.8" },
+      "keg_only": false,
+      "linked_keg": "3.12.8",
+      "installed": [
+        {
+          "version": "3.12.8",
+          "poured_from_bottle": false,
+          "installed_on_request": true,
+          "installed_as_dependency": false,
+          "runtime_dependencies": []
+        }
+      ]
+    },
+    {
+      "name": "local-foo",
+      "tap": "local/tap",
+      "desc": "Not in core",
+      "homepage": "https://example.invalid/foo",
+      "versions": { "stable": "0.1.0" },
+      "keg_only": false,
+      "linked_keg": "0.1.0",
+      "installed": [
+        {
+          "version": "0.1.0",
+          "poured_from_bottle": false,
+          "installed_on_request": true,
+          "installed_as_dependency": false,
+          "runtime_dependencies": []
+        }
+      ]
+    }
+  ],
+  "casks": [
+    {
+      "token": "visual-studio-code",
+      "tap": "homebrew/cask",
+      "name": ["Visual Studio Code"],
+      "homepage": "https://code.visualstudio.com/",
+      "version": "1.96.0",
+      "installed": "1.96.0",
+      "desc": "Open-source code editor"
+    }
+  ]
+}
