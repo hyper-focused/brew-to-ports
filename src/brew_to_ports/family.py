@@ -31,13 +31,28 @@ def is_python_runtime(name: str) -> bool:
     return n == "python" or n.startswith("python@")
 
 
-def python_families(
+def is_cutover_runtime(name: str) -> bool:
+    """python, php, node (and @version). Not ruby — left as a brew dep."""
+    n = name.lower()
+    if n == "ruby" or n.startswith("ruby@"):
+        return False
+    return (
+        n == "python"
+        or n.startswith("python@")
+        or n == "php"
+        or n.startswith("php@")
+        or n == "node"
+        or n.startswith("node@")
+    )
+
+
+def cutover_families(
     packages: Sequence[Package],
     decisions: Sequence[Decision],
     *,
     allow_older_same_major: bool = False,
 ) -> List[RuntimeFamily]:
-    """Families for python / python@* that have a viable candidate port."""
+    """Families for python/php/node that have a viable candidate port."""
     by_name: Dict[str, Package] = {p.name: p for p in packages}
     dmap: Dict[str, Decision] = {d.brew_name: d for d in decisions}
     dependents: Dict[str, List[str]] = {}
@@ -49,7 +64,7 @@ def python_families(
 
     out: List[RuntimeFamily] = []
     for pkg in packages:
-        if not is_python_runtime(pkg.name):
+        if not is_cutover_runtime(pkg.name):
             continue
         d = dmap.get(pkg.name)
         if d is None or d.category != "runtime":
@@ -72,6 +87,21 @@ def python_families(
                 fam.blocked.append(name)
         out.append(fam)
     return out
+
+
+def python_families(
+    packages: Sequence[Package],
+    decisions: Sequence[Decision],
+    *,
+    allow_older_same_major: bool = False,
+) -> List[RuntimeFamily]:
+    return [
+        fam
+        for fam in cutover_families(
+            packages, decisions, allow_older_same_major=allow_older_same_major
+        )
+        if is_python_runtime(fam.runtime)
+    ]
 
 
 def _runtime_cutover_ok(d: Decision, *, allow_older_same_major: bool) -> bool:

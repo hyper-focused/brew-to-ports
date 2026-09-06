@@ -2,7 +2,7 @@ import io
 import unittest
 
 from brew_to_ports.cutover import CutoverAbort, decide_cutover
-from brew_to_ports.family import RuntimeFamily, python_families
+from brew_to_ports.family import RuntimeFamily, cutover_families, python_families
 from brew_to_ports.models import (
     CUTOVER_MIGRATE,
     CUTOVER_SKIP,
@@ -30,7 +30,7 @@ def _pkg(name, requested=True, deps=None):
     )
 
 
-def _dec(name, status, category="", requested=True, port=None, delta="equal"):
+def _dec(name, status, category="", requested=True, port=None, delta="equal", hold=False):
     match = None
     if port:
         match = Match(
@@ -58,6 +58,7 @@ def _dec(name, status, category="", requested=True, port=None, delta="equal"):
         category=category,
         requested=requested,
         kind=KIND_FORMULA,
+        hold_uninstall=hold,
     )
 
 
@@ -183,13 +184,52 @@ class CutoverPlanTests(unittest.TestCase):
         self.assertEqual(plan.cutover[0].action, CUTOVER_SKIP)
         self.assertIn("python@3.13", plan.keep_set)
 
-    def test_families_only_python(self):
-        packages = [_pkg("python@3.13"), _pkg("php"), _pkg("pytest", deps=["python@3.13"])]
+    def test_families_python_php_node_not_ruby(self):
+        packages = [
+            _pkg("python@3.13"),
+            _pkg("php"),
+            _pkg("node@22"),
+            _pkg("ruby"),
+            _pkg("pytest", deps=["python@3.13"]),
+        ]
         decisions = [
             _dec("python@3.13", STATUS_EXCEPTION, category="runtime", port="python313"),
-            _dec("php", STATUS_EXCEPTION, category="runtime", port="php"),
+            _dec("php", STATUS_EXCEPTION, category="runtime", port="php", delta="port_older_same_major"),
+            _dec("node@22", STATUS_EXCEPTION, category="runtime", port="nodejs22", delta="port_older_same_major"),
+            _dec("ruby", STATUS_EXCEPTION, category="runtime", port="ruby", delta="port_older_major"),
             _dec("pytest", STATUS_MIGRATE, port="py313-pytest"),
         ]
-        fams = python_families(packages, decisions)
-        self.assertEqual([f.runtime for f in fams], ["python@3.13"])
-        self.assertEqual(fams[0].can, ["pytest"])
+        self.assertEqual([f.runtime for f in python_families(packages, decisions)], ["python@3.13"])
+        without = cutover_families(packages, decisions)
+        self.assertEqual([f.runtime for f in without], ["python@3.13"])
+        with_flag = cutover_families(packages, decisions, allow_older_same_major=True)
+        self.assertEqual([f.runtime for f in with_flag], ["python@3.13", "php", "node@22"])
+
+    def test_php_cutover_keeps_hold(self):
+        from brew_to_ports.models import CutoverChoice
+
+        packages = [_pkg("php"), _pkg("prettier", deps=["php"])]
+        decisions = [
+            _dec("php", STATUS_EXCEPTION, category="runtime", port="php", hold=True),
+            _dec("prettier", STATUS_KEEP, category="no_equivalent"),
+        ]
+        plan = build_plan(
+            packages,
+            decisions,
+            arch="x86_64",
+            macos="15",
+            brew_prefix="/usr/local",
+            ports_prefix="/opt/local",
+            cutover=[
+                CutoverChoice(
+                    runtime="php",
+                    action=CUTOVER_MIGRATE,
+                    can=[],
+                    drop=["prettier"],
+                )
+            ],
+        )
+        by = {d.brew_name: d for d in plan.decisions}
+        self.assertEqual(by["php"].status, STATUS_MIGRATE)
+        self.assertTrue(by["php"].hold_uninstall)
+        self.assertEqual(by["prettier"].status, STATUS_DROP)

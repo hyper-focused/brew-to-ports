@@ -24,7 +24,7 @@ No live `brew` / `port` required for CI.
 
 ## New behavior (where it lives)
 
-- Runtime grouping → `family.py`. Cutover prompts/flags → `cutover.py` (writes `CutoverChoice` only). v1 eligibility is `python` / `python@*` only.
+- Runtime grouping → `family.py`. Cutover prompts/flags → `cutover.py` (writes `CutoverChoice` only). Eligibility: python, php, node (not ruby).
 - Overlay Portfiles → `source_try.py`. Plan applies them; `migrate.sh` uses `port -D`. Failed install must not uninstall brew.
 - `STATUS_DROP` is uninstall-without-port, not a fake migrate. `--i-acked-drop` is a **planner** flag, not `migrate.sh`.
 - Unique homepage / family pick: shared non-generic stem, or `aliases.json`.

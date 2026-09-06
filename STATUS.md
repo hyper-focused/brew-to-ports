@@ -8,7 +8,7 @@ Intel Homebrew → MacPorts planner. Scan is read-only. `migrate.sh --apply` is 
 - Matcher: exact, aliases, `@version` compact, stem maps, homepage **with shared non-generic stem**, family pick
 - Keep-set: requested keep/exception + casks pin brew runtime deps; leftover unrequested deps of migrators can go
 - Exceptions: runtime, toolchain, **service** (httpd/mysql/nginx/unbound stay unless a later cutover)
-- Python family cutover (TTY `[m]/[s]/[q]` then `yes`; non-TTY `--migrate-runtime` + `--i-acked-drop`)
+- Python / php / node family cutover (TTY `[m]/[s]/[q]` then `yes`; non-TTY `--migrate-runtime` + `--i-acked-drop`). Ruby is not offered. php HOLD (`--i-acked-config`) still applies.
 - `--try-source`: overlay Portfiles (github noarch, Go, autoreconf); `port -D` install; brew keg stays on failure
 - `--allow-older-same-major`
 - Privileges: never `sudo brew`; one `sudo -v` for MacPorts; keepalive + `sudo -n`
@@ -27,9 +27,8 @@ Intel Homebrew → MacPorts planner. Scan is read-only. `migrate.sh --apply` is 
 
 ## Next (when we say go)
 
-1. **php / node / ruby cutover** — same dialog as python (`family.py` is already generic; eligibility is python-only in v1)
-2. **try-source shapes we skipped** — cmake, rust/PyPI, mysql (only if a destroot strategy is boring)
-3. **Cask Aqua cutover** — iTerm/Audacity already match; default is still keep-on-brew
+1. **try-source shapes we skipped** — cmake, rust/PyPI, mysql (only if a destroot strategy is boring)
+2. **Cask Aqua cutover** — iTerm/Audacity already match; default is still keep-on-brew
 
 Remaining keep-set after python + same-major + try-source on the author’s cellar was mostly casks, ImageMagick/HandBrake (older major), and php/node runtimes. That is policy, not unnamed packages.
 
@@ -39,7 +38,7 @@ Remaining keep-set after python + same-major + try-source on the author’s cell
 |---|---|
 | `match.py` | brew → port name (no migrate/keep) |
 | `classify.py` | initial Decision (runtime/toolchain/service stay exception) |
-| `family.py` | runtime + direct dependents; can/drop/blocked |
+| `family.py` | runtime + direct dependents; can/drop/blocked (python/php/node) |
 | `cutover.py` | `CutoverChoice`; TTY + flags |
 | `source_try.py` | overlay Portfile text + shape |
 | `plan.py` | keep-set, cutover overlay, try-source overlay, ops |

@@ -75,7 +75,7 @@ If that list is junk, run them for real, **then** scan. If it names something yo
 
 `--allow-older-same-major` opts in to MacPorts ports that are older but the same major as the brew formula.
 
-On a TTY, python / `python@*` families get `[m]igrate` / `[s]kip` / `[q]uit` (then `yes` if anything would be deleted). `q` writes nothing. Non-TTY stays dual-stack unless `--migrate-runtime python@3.13` and `--i-acked-drop python@3.13` when unmatched children would be dropped. php/node/ruby are not in this slice.
+On a TTY, python / php / node families get `[m]igrate` / `[s]kip` / `[q]uit` (then `yes` if anything would be deleted). `q` writes nothing. Non-TTY stays dual-stack unless `--migrate-runtime python@3.13` (repeat for `php`, `node@22`, …) and `--i-acked-drop` when unmatched children would be dropped. php uninstall still needs `--i-acked-config php` (php.ini). Ruby is not offered — left as a brew dep. php/node older-same-major only appear with `--allow-older-same-major`.
 
 `--try-source` writes best-effort overlay Portfiles (github noarch, Go, autoreconf) under `~/.brew-to-ports/overlay` and plans `port -D` install. cmake/rust/PyPI/mysql are not attempted. Failed overlay install leaves the brew keg. Does not edit `sources.conf`.
 
@@ -86,7 +86,7 @@ On a TTY, python / `python@*` families get `[m]igrate` / `[s]kip` / `[q]uit` (th
 - Formulae and casks: requested vs dependency, bottle vs source, keg-only.
 - Match to MacPorts: exact name, aliases, `@version` compact (`php@8.5` → `php85`), stem maps (`python-foo` → `py314-foo`, `node@22` → `nodejs22`, `ruby-`/`perl-`/`r-` modules), homepage family pick (`ffmpeg-full` → `ffmpeg-devel`) only when names share a non-generic stem.
 - Keep-set: requested brew survivors (and casks) pin their brew runtime graph. Unrequested leftovers of migrators can go; MacPorts already pulled what it needs. Service/runtime/toolchain exceptions are not leftover-uninstalled.
-- Python family cutover (plan-time). php/node/ruby stay dual-stack until that slice exists.
+- Python / php / node family cutover (plan-time). Ruby stays on brew.
 - `--try-source` overlay Portfiles for some unmatched formulae (not cmake/rust/PyPI).
 - PATH advice from `.zshenv` / `.zprofile` / sourced files under `$HOME` (not antidote/Cellar).
 - Best-effort `/usr/local` → `/opt/local` rewrites for aliases and `LDFLAGS`/`CPPFLAGS`.
@@ -97,7 +97,7 @@ On a TTY, python / `python@*` families get `[m]igrate` / `[s]kip` / `[q]uit` (th
 - Run on Apple Silicon, Linuxbrew, or macOS 12 Monterey and older
 - Copy nginx.conf, databases, or TLS keys
 - Edit `~/.zshrc` / `~/.zsh_path` for you
-- Auto-migrate language runtimes (python/ruby/node/php) or toolchains (gcc/llvm) without a TTY cutover / `--migrate-runtime`
+- Auto-migrate language runtimes or toolchains (gcc/llvm) without a TTY cutover / `--migrate-runtime`. Ruby is never in that prompt.
 - Treat `port search yq` hits as equivalents (`python-yq` is not `py-pyqt4` and not ports `yq`)
 
 ## Layout

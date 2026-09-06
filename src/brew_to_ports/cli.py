@@ -17,7 +17,7 @@ from brew_to_ports.catalog import Catalog, from_portindex_text
 from brew_to_ports.classify import classify_all
 from brew_to_ports.config_scan import scan_configs
 from brew_to_ports.cutover import CutoverAbort, decide_cutover
-from brew_to_ports.family import python_families
+from brew_to_ports.family import cutover_families
 from brew_to_ports.inventory import from_brew_json
 from brew_to_ports.path_suggest import default_path_file, suggest_path
 from brew_to_ports.plan import build_plan
@@ -136,7 +136,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         metavar="FORMULA",
-        help="non-TTY: cut over this python runtime (repeatable). TTY prompts instead.",
+        help="non-TTY: cut over this python/php/node runtime (repeatable). TTY prompts instead.",
     )
     parser.add_argument(
         "--i-acked-drop",
@@ -236,7 +236,7 @@ def run_scan(
 ) -> "Plan":
     packages = from_brew_json(payload)
     decisions = classify_all(packages, catalog, allow_older_same_major=allow_older_same_major)
-    families = python_families(packages, decisions, allow_older_same_major=allow_older_same_major)
+    families = cutover_families(packages, decisions, allow_older_same_major=allow_older_same_major)
     choices = decide_cutover(
         families,
         migrate_runtime=migrate_runtime,
