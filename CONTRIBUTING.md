@@ -8,7 +8,7 @@ PRs welcome. Keep the matcher conservative: a false migrate is worse than a keep
 2. **One-off, no pattern** → `data/aliases.json`. Examples: `pkgconf` → `pkgconfig`, `gnu-sed` → `gsed`.
 3. **Dangerous class** → `data/exceptions.json` (runtime, toolchain, stateful). Do not special-case a single formula in classify.
 
-Do **not** add `port search` / substring matching. `python-yq` is not `py-pyqt4`.
+Do **not** add `port search` / substring matching. `python-yq` is not `py-pyqt4`. Unique homepage requires a shared non-generic stem (or an alias); `xquartz` is not `quartz-wm`. `gcc` is not `riscv32-none-elf-gcc`.
 
 Do **not** put cellar-specific aliases in `aliases.json` (e.g. `node` → `nodejs22`). Use `node@N` → `nodejsN`.
 

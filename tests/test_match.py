@@ -2,7 +2,14 @@ import unittest
 
 from brew_to_ports.catalog import from_dicts
 from brew_to_ports.match import compare_versions, match_package, parse_version, versioned_candidates
-from brew_to_ports.models import DELTA_EQUAL, DELTA_OLDER_MAJOR, DELTA_OLDER_SAME_MAJOR, DELTA_PORT_NEWER, Package
+from brew_to_ports.models import (
+    DELTA_EQUAL,
+    DELTA_OLDER_MAJOR,
+    DELTA_OLDER_SAME_MAJOR,
+    DELTA_PORT_NEWER,
+    DELTA_UNPARSEABLE,
+    Package,
+)
 
 
 class VersionTests(unittest.TestCase):
@@ -15,6 +22,8 @@ class VersionTests(unittest.TestCase):
         self.assertEqual(compare_versions("1.24.0", "1.25.0"), DELTA_PORT_NEWER)
         self.assertEqual(compare_versions("1.25.0", "1.24.0"), DELTA_OLDER_SAME_MAJOR)
         self.assertEqual(compare_versions("2.0.0", "1.9.0"), DELTA_OLDER_MAJOR)
+        self.assertEqual(compare_versions("1.0.3", "20240924"), DELTA_UNPARSEABLE)
+        self.assertEqual(compare_versions("20240924", "20240924"), DELTA_EQUAL)
 
     def test_versioned_candidates(self):
         cands = versioned_candidates("python@3.12")
@@ -161,8 +170,40 @@ class CascadeTests(unittest.TestCase):
             runtime_deps=["openblas"],
         )
         m = match_package(pkg, catalog, aliases={})
-        self.assertIn(m.port_name, ("py-scipy", "py314-scipy", "py313-scipy"))
+        self.assertEqual(m.port_name, "py-scipy")
         self.assertEqual(m.rule_id, "homepage_family")
+
+    def test_xquartz_is_not_quartz_wm(self):
+        catalog = from_dicts(
+            [{"name": "quartz-wm", "version": "1.3.2", "homepage": "https://www.xquartz.org/"}]
+        )
+        pkg = Package(
+            name="xquartz",
+            version="2.8.5",
+            kind="cask",
+            origin="brew",
+            homepage="https://www.xquartz.org/",
+        )
+        m = match_package(pkg, catalog, aliases={})
+        self.assertIsNone(m.port_name)
+
+    def test_gcc_is_not_cross_compiler(self):
+        catalog = from_dicts(
+            [
+                {"name": "riscv32-none-elf-gcc", "version": "16.2.0", "homepage": "https://gcc.gnu.org/"},
+                {"name": "gcc15", "version": "15.2.0", "homepage": "https://gcc.gnu.org/"},
+            ]
+        )
+        pkg = Package(
+            name="gcc",
+            version="16.2.0",
+            kind="formula",
+            origin="brew",
+            homepage="https://gcc.gnu.org/",
+        )
+        m = match_package(pkg, catalog, aliases={})
+        self.assertNotEqual(m.port_name, "riscv32-none-elf-gcc")
+        self.assertIn(m.port_name, ("gcc15", None))
 
     def test_ruby_prefix_to_rb_series(self):
         catalog = from_dicts(

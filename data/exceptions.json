@@ -63,6 +63,5 @@
     "redis",
     "php",
     "php@*"
-  ],
-  "aqua_categories": ["aqua", "sysutils"]
+  ]
 }

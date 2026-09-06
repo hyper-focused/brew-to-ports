@@ -40,6 +40,29 @@ _NOISE_STEMS = {
     "node",
     "js",
 }
+# Too generic to count as homepage-family relatedness (gcc ∩ riscv32-none-elf-gcc).
+_GENERIC_STEMS = {
+    "gcc",
+    "cc",
+    "lib",
+    "bin",
+    "src",
+    "dev",
+    "gnu",
+    "org",
+    "com",
+    "elf",
+    "none",
+    "cross",
+    "host",
+    "target",
+    "unknown",
+    "opus",
+    "the",
+    "and",
+    "for",
+}
+_CROSS_PORT = re.compile(r"(^|-)((none|unknown|pc|apple)-(elf|linux|darwin|none))(-|$)")
 
 
 def load_aliases(path: Optional[Path] = None) -> Dict[str, str]:
@@ -97,6 +120,8 @@ def compare_versions(brew_version: str, port_version: str) -> str:
     port = parse_version(port_version)
     if brew is None or port is None:
         return DELTA_UNPARSEABLE
+    if _is_yyyymmdd(brew) != _is_yyyymmdd(port):
+        return DELTA_UNPARSEABLE
     n = max(len(brew), len(port))
     brew = brew + (0,) * (n - len(brew))
     port = port + (0,) * (n - len(port))
@@ -132,6 +157,14 @@ def parse_version(raw: str):
         else:
             break
     return tuple(parts) if parts else None
+
+
+def _is_yyyymmdd(parts) -> bool:
+    """True if parse_version looks like a compact date (20240924), not semver."""
+    if not parts or len(parts) != 1:
+        return False
+    n = parts[0]
+    return 100000 <= n <= 29991231
 
 
 def versioned_candidates(name: str) -> List[str]:
@@ -197,7 +230,7 @@ def _cascade(pkg, catalog: Catalog, aliases: Dict[str, str]):
 
     if pkg.homepage:
         homes = catalog.by_home(pkg.homepage)
-        if len(homes) == 1:
+        if len(homes) == 1 and stems_related(name, homes[0].name):
             return homes[0], "homepage", "homepage", [
                 f"homepage {normalize_homepage(pkg.homepage)}"
             ]
@@ -285,7 +318,7 @@ def stem_candidates(pkg: Package) -> List[str]:
         if rest in {"tk", "tkinter"}:
             rest = "tkinter"
         if rest:
-            series_list = python_series(pkg) or ("314", "313", "312", "311", "310")
+            series_list = python_series(pkg)
             for series in series_list:
                 out.append(f"py{series}-{rest}")
             out.append(f"py-{rest}")
@@ -299,7 +332,7 @@ def stem_candidates(pkg: Package) -> List[str]:
     if name.startswith("ruby-"):
         rest = name[len("ruby-") :].split("@", 1)[0]
         if rest:
-            for series in ruby_series(pkg) or ("34", "33", "32"):
+            for series in ruby_series(pkg):
                 out.append(f"rb{series}-{rest}")
             out.append(f"rb-{rest}")
     elif ruby_series(pkg) and name.split("@")[0] not in _INTERPRETERS:
@@ -310,7 +343,7 @@ def stem_candidates(pkg: Package) -> List[str]:
     if name.startswith("perl-"):
         rest = name[len("perl-") :]
         if rest:
-            for series in perl_series(pkg) or ("38", "34"):
+            for series in perl_series(pkg):
                 out.append(f"p5.{series}-{rest}")
             out.append(f"p5-{rest}")
     elif perl_series(pkg) and name.split("@")[0] not in _INTERPRETERS:
@@ -361,10 +394,25 @@ def name_stems(name: str) -> set:
     return stems
 
 
+def stems_related(brew_name: str, port_name: str) -> bool:
+    """True if brew and port share a non-generic stem, or port is brew/brewN."""
+    pn = port_name.lower()
+    bn = brew_name.lower().split("@", 1)[0]
+    if _CROSS_PORT.search(pn) and bn in {"gcc", "binutils", "gdb", "clang"}:
+        return bool(re.match(rf"^{re.escape(bn)}\d*$", pn))
+    shared = (name_stems(brew_name) & name_stems(port_name)) - _GENERIC_STEMS
+    if shared:
+        return True
+    if bn == pn:
+        return True
+    if re.match(rf"^{re.escape(bn)}\d+$", pn):
+        return True
+    return False
+
+
 def pick_homepage_family(pkg: Package, homes: List) -> Optional[tuple]:
     """Several ports share a homepage. Pick by related name + version, not substring."""
-    brew_stems = name_stems(pkg.name)
-    related = [p for p in homes if name_stems(p.name) & brew_stems]
+    related = [p for p in homes if stems_related(pkg.name, p.name)]
     if not related:
         return None
     series = python_series(pkg)
@@ -377,13 +425,17 @@ def pick_homepage_family(pkg: Package, homes: List) -> Optional[tuple]:
         DELTA_UNPARSEABLE: 4,
     }
     for port in related:
-        delta = compare_versions(pkg.version, port.version)
-        r = rank.get(delta, 9)
-        bonus = 0
         lname = port.name.lower()
         m = _PY_PORT_RE.match(lname)
         rb = _RUBY_PORT_RE.match(lname)
         p5 = _PERL_PORT_RE.match(lname)
+        if m and not series:
+            continue
+        if _CROSS_PORT.search(lname):
+            continue
+        delta = compare_versions(pkg.version, port.version)
+        r = rank.get(delta, 9)
+        bonus = 0
         if series:
             if m and m.group(1) in series:
                 bonus -= 10 + (len(series) - series.index(m.group(1)))
@@ -391,8 +443,6 @@ def pick_homepage_family(pkg: Package, homes: List) -> Optional[tuple]:
                 bonus -= 1
             elif m:
                 bonus += 8
-        elif m:
-            bonus -= int(m.group(1)) / 1000.0  # prefer newer pyNNN if we don't know
         rb_series = ruby_series(pkg)
         if rb_series:
             if rb and rb.group(1) in rb_series:
@@ -408,6 +458,8 @@ def pick_homepage_family(pkg: Package, homes: List) -> Optional[tuple]:
         if pkg.name.endswith("-full") and lname.endswith("-devel"):
             bonus -= 5
         scored.append((r, bonus, len(lname), port, delta))
+    if not scored:
+        return None
     scored.sort(key=lambda row: (row[0], row[1], row[2]))
     best = scored[0]
     return best[3], f"delta={best[4]}"

@@ -78,6 +78,19 @@ class ClassifyTests(unittest.TestCase):
         d2 = classify_one(pkg, self.catalog, aliases=self.aliases, allow_older_same_major=True)
         self.assertEqual(d2.status, STATUS_MIGRATE)
 
+    def test_httpd_is_service_exception(self):
+        pkg = Package(
+            name="httpd",
+            version="2.4.62",
+            kind="formula",
+            origin="brew",
+            tap="homebrew/core",
+            requested=True,
+        )
+        d = classify_one(pkg, self.catalog, aliases=self.aliases)
+        self.assertEqual(d.status, STATUS_EXCEPTION)
+        self.assertEqual(d.category, "service")
+
     def test_older_major_exception(self):
         pkg = Package(
             name="jq",

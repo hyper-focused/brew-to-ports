@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from brew_to_ports.models import (
+    STATUS_DROP,
     STATUS_EXCEPTION,
     STATUS_KEEP,
     STATUS_MIGRATE,
@@ -25,14 +26,27 @@ def render_report(plan: Plan) -> str:
     migrate = [d for d in plan.decisions if d.status == STATUS_MIGRATE]
     keep = [d for d in plan.decisions if d.status == STATUS_KEEP]
     exc = [d for d in plan.decisions if d.status == STATUS_EXCEPTION]
-    lines.append(f"counts: migrate={len(migrate)} keep={len(keep)} exception={len(exc)}")
+    drop = [d for d in plan.decisions if d.status == STATUS_DROP]
+    lines.append(
+        f"counts: migrate={len(migrate)} keep={len(keep)} exception={len(exc)} drop={len(drop)}"
+    )
     lines.append("")
+    if plan.cutover:
+        lines.append("CUTOVER")
+        lines.append("-------")
+        for ch in plan.cutover:
+            extra = f" drop={','.join(ch.drop)}" if ch.drop else ""
+            pin = f" pins={','.join(ch.pins)}" if ch.pins else ""
+            note = f" {ch.note}" if ch.note else ""
+            lines.append(f"  {ch.runtime}: {ch.action}{extra}{pin}{note}")
+        lines.append("")
     lines.extend(_section("MIGRATE", migrate))
+    lines.extend(_section("DROP (uninstalled, not replaced)", drop))
     lines.extend(_section("KEEP ON BREW", keep))
     lines.extend(_section("EXCEPTIONS", exc))
     if plan.keep_set:
-        lines.append("KEEP-SET (brew deps pinned by leftovers)")
-        lines.append("---------------------------------------")
+        lines.append("KEEP-SET (brew runtime graph of requested keep/exception + casks)")
+        lines.append("---------------------------------------------------------------")
         for name in plan.keep_set:
             lines.append(f"  {name}")
         lines.append("")

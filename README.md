@@ -75,6 +75,8 @@ If that list is junk, run them for real, **then** scan. If it names something yo
 
 `--allow-older-same-major` opts in to MacPorts ports that are older but the same major as the brew formula.
 
+On a TTY, python / `python@*` families get `[m]igrate` / `[s]kip` / `[q]uit` (then `yes` if anything would be deleted). `q` writes nothing. Non-TTY stays dual-stack unless `--migrate-runtime python@3.13` and `--i-acked-drop python@3.13` when unmatched children would be dropped. php/node/ruby are not in this slice.
+
 `--brew-json FILE` / `--portindex FILE` run against dumps (useful for tests and for machines that cannot talk to the PortIndex).
 
 ## What it does
@@ -91,7 +93,7 @@ If that list is junk, run them for real, **then** scan. If it names something yo
 - Run on Apple Silicon, Linuxbrew, or macOS 12 Monterey and older
 - Copy nginx.conf, databases, or TLS keys
 - Edit `~/.zshrc` / `~/.zsh_path` for you
-- Auto-migrate language runtimes (python/ruby/node/php) or toolchains (gcc/llvm)
+- Auto-migrate language runtimes (python/ruby/node/php) or toolchains (gcc/llvm) without a TTY cutover / `--migrate-runtime`
 - Treat `port search yq` hits as equivalents (`python-yq` is not `py-pyqt4` and not ports `yq`)
 
 ## Layout

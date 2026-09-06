@@ -90,7 +90,7 @@ def classify_one(
             kind=pkg.kind,
         )
 
-    if category in ("toolchain", "runtime"):
+    if category in ("toolchain", "runtime", "service"):
         reasons = [f"exception category {category}"]
         if match.port_name:
             reasons.append(f"candidate port {match.port_name} @{match.port_version} not auto-migrated")
@@ -163,8 +163,6 @@ def _version_gate(
     delta = match.version_delta
     if delta in (DELTA_EQUAL, DELTA_PORT_NEWER):
         reasons = [f"{match.rule_id}", f"version {delta} brew={match.brew_version} port={match.port_version}"]
-        if category == "crypto_lib":
-            reasons.append("crypto_lib: migrate only if no leftover brew dependent remains")
         if stateful:
             reasons.append("stateful: brew uninstall held until config is acked")
         return Decision(

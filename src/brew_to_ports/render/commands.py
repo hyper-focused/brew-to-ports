@@ -17,7 +17,8 @@ def render_commands(plan: Plan) -> str:
     if installs:
         lines.append("# Install MacPorts equivalents (MacPorts will pull its own deps)")
         for op in installs:
-            lines.append(f"sudo port install {op.port_name}   # replaces brew {op.brew_name}")
+            lines.append(f"# replaces brew {op.brew_name}")
+            lines.append(f"sudo port install {op.port_name}")
         lines.append("")
         lines.append("# Validate (examples)")
         for op in installs:
@@ -35,6 +36,9 @@ def render_commands(plan: Plan) -> str:
                     f"# HOLD {op.brew_name}: ack config/state first "
                     f"(./migrate.sh --apply --i-acked-config {op.brew_name})"
                 )
+            elif op.comment.startswith("drop:"):
+                lines.append(f"# DROP: no MacPorts equivalent")
+                lines.append(f"brew uninstall {op.brew_name}")
             else:
                 if op.kind == "cask":
                     lines.append(f"brew uninstall --cask {op.brew_name}")

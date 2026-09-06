@@ -26,10 +26,18 @@ def requested_names(packages: Iterable[Package]) -> List[str]:
 
 def _formula(raw: Dict[str, Any], installed: Set[str]) -> Package:
     installed_kegs = raw.get("installed") or []
-    inst = installed_kegs[-1] if installed_kegs else {}
+    linked = raw.get("linked_keg")
+    inst: Dict[str, Any] = {}
+    if linked not in (None, ""):
+        for keg in installed_kegs:
+            if str(keg.get("version") or "") == str(linked):
+                inst = keg
+                break
+    if not inst:
+        inst = installed_kegs[-1] if installed_kegs else {}
     deps = _formula_deps(raw, inst, installed)
     version = inst.get("version") or (raw.get("versions") or {}).get("stable") or ""
-    linked = raw.get("linked_keg") not in (None, "")
+    linked_flag = linked not in (None, "")
     return Package(
         name=raw.get("name") or "",
         version=str(version),
@@ -41,7 +49,7 @@ def _formula(raw: Dict[str, Any], installed: Set[str]) -> Package:
         as_dependency=bool(inst.get("installed_as_dependency")),
         bottle=bool(inst.get("poured_from_bottle")),
         keg_only=bool(raw.get("keg_only")),
-        linked=linked,
+        linked=linked_flag,
         runtime_deps=deps,
         description=raw.get("desc") or "",
     )
@@ -60,7 +68,8 @@ def _formula_deps(raw: Dict[str, Any], inst: Dict[str, Any], installed: Set[str]
     for dep in inst.get("runtime_dependencies") or []:
         add(str(dep.get("full_name") or dep.get("name") or ""))
     for name in raw.get("dependencies") or []:
-        add(str(name))
+        if str(name) in installed:
+            add(str(name))
     for name in raw.get("recommended_dependencies") or []:
         if str(name) in installed:
             add(str(name))

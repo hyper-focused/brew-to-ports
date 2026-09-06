@@ -51,9 +51,8 @@ if ! [[ "$major" == <-> ]] || (( major < 13 )); then
   exit 1
 fi
 
-# Homebrew must run as the login user (it owns /usr/local and launchd services).
-# MacPorts writes /opt/local and needs root. Never `sudo brew`.
-# If this script was started with sudo, drop brew back to $SUDO_USER.
+# Never `sudo brew`. Port writes /opt/local (root). If this script was
+# started with sudo, drop brew back to $SUDO_USER.
 typeset -a BREW_AS PORT_AS
 BREW_AS=()
 PORT_AS=()
@@ -69,10 +68,8 @@ else
   PORT_AS=(/usr/bin/sudo)
 fi
 
-# One sudo password for the whole --apply. A single `sudo port install` stays
-# root for the entire compile; the ticket only matters *between* packages.
-# Keepalive + pre-command refresh on this TTY (macOS tty_tickets). Never store a password.
-# sudo -n after that: ticket dead → fail closed, no prompt storm.
+# One sudo password. Compile stays root for that `port install`; keepalive
+# covers the gap before the next one. sudo -n after: dead ticket fails closed.
 SUDO_KEEP_PID=""
 if [[ "$APPLY" -eq 1 && "$(/usr/bin/id -u)" -ne 0 ]]; then
   echo "Enter your sudo password for MacPorts package installations."
@@ -148,6 +145,12 @@ def render_script(plan: Plan) -> str:
             lines.append(f"#   {cfg.brew_package}: {cfg.brew_path} -> {cfg.guessed_ports_path}{extra}")
         lines.append("")
 
+    if plan.cutover:
+        lines.append("# cutover (plan-time)")
+        for ch in plan.cutover:
+            lines.append(f"#   {ch.runtime}: {ch.action}" + (f" drop {', '.join(ch.drop)}" if ch.drop else ""))
+        lines.append("")
+
     lines.append("port_sudo selfupdate")
     lines.append("")
 
@@ -167,6 +170,9 @@ def render_script(plan: Plan) -> str:
                 f'  echo "HOLD: {op.brew_name} has config/state; pass --i-acked-config {op.brew_name} to uninstall brew copy"'
             )
             lines.append("fi")
+        elif op.comment.startswith("drop:"):
+            lines.append(f"echo '--> DROP {op.brew_name} (no MacPorts equivalent; not replaced)'")
+            lines.append(f"uninstall_brew {op.brew_name} {kind}")
         else:
             lines.append(f"echo '--> brew uninstall {op.brew_name}'")
             lines.append(f"uninstall_brew {op.brew_name} {kind}")
@@ -207,6 +213,7 @@ port_sudo() {
 }
 
 port_has() {
+  # Query as the current uid. Do not wrap this with sudo.
   "$PORT" -q installed "$1" >/dev/null 2>&1
 }
 
@@ -218,10 +225,26 @@ brew_has_cask() {
   "${BREW_AS[@]}" "$BREW" list --cask "$1" >/dev/null 2>&1
 }
 
+typeset -A BREW_SVC
+BREW_SVC_LOADED=0
+
+brew_services_load() {
+  [[ "$BREW_SVC_LOADED" -eq 1 ]] && return 0
+  BREW_SVC_LOADED=1
+  local line name st
+  while IFS= read -r line; do
+    [[ -z "$line" || "$line" == Name* ]] && continue
+    name="${${=line}[1]}"
+    st="${${=line}[2]}"
+    BREW_SVC[$name]="$st"
+  done < <("${BREW_AS[@]}" "$BREW" services list 2>/dev/null || true)
+}
+
 stop_brew_service() {
   local name="$1"
   local st
-  st="$("${BREW_AS[@]}" "$BREW" services list 2>/dev/null | awk -v n="$name" '$1==n {print $2; exit}')" || return 0
+  brew_services_load
+  st="${BREW_SVC[$name]:-}"
   [[ "$st" == "started" || "$st" == "error" ]] || return 0
   run "${BREW_AS[@]}" "$BREW" services stop "$name" || true
 }

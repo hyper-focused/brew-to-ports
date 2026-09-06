@@ -14,6 +14,10 @@ ORIGIN_MACPORTS = "macports"
 STATUS_MIGRATE = "migrate"
 STATUS_KEEP = "keep"
 STATUS_EXCEPTION = "exception"
+STATUS_DROP = "drop"
+
+CUTOVER_MIGRATE = "migrate"
+CUTOVER_SKIP = "skip"
 
 DELTA_EQUAL = "equal"
 DELTA_PORT_NEWER = "port_newer"
@@ -82,7 +86,8 @@ class PathLine:
     path: str
     lineno: int
     text: str
-    kind: str  # source_owner | export | shellenv | alias | linker
+    # source_owner | export | shellenv | alias | linker
+    kind: str
     replace_with_load: bool = False
     suggested: str = ""
 
@@ -95,7 +100,8 @@ class PathAdvice:
     collisions: List[str] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
     path_owners: List[str] = field(default_factory=list)
-    idiom: str = ""  # zsh-array | export-path | mixed | unknown
+    # zsh-array | export-path | mixed | unknown
+    idiom: str = ""
     extra_writers: List[str] = field(default_factory=list)
     alias_hits: List[str] = field(default_factory=list)
     linker_hits: List[str] = field(default_factory=list)
@@ -119,6 +125,19 @@ class PlanOp:
 
 
 @dataclass
+class CutoverChoice:
+    """Writer: cutover.py. action is CUTOVER_MIGRATE or CUTOVER_SKIP."""
+
+    runtime: str
+    action: str
+    can: List[str] = field(default_factory=list)
+    drop: List[str] = field(default_factory=list)
+    blocked: List[str] = field(default_factory=list)
+    pins: List[str] = field(default_factory=list)
+    note: str = ""
+
+
+@dataclass
 class Plan:
     arch: str
     macos: str
@@ -132,3 +151,4 @@ class Plan:
     allow_older_same_major: bool = False
     catalog_source: str = ""
     notes: List[str] = field(default_factory=list)
+    cutover: List[CutoverChoice] = field(default_factory=list)

@@ -4,5 +4,8 @@
   "sqlite": "sqlite3",
   "ca-certificates": "curl-ca-bundle",
   "gnu-sed": "gsed",
-  "gnu-tar": "gnutar"
+  "gnu-tar": "gnutar",
+  "gnu-time": "gtime",
+  "sevenzip": "7zip",
+  "httpd": "apache2"
 }

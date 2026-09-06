@@ -16,6 +16,8 @@ from brew_to_ports.adapters.shell_env import current_path, read_rc_files
 from brew_to_ports.catalog import Catalog, from_portindex_text
 from brew_to_ports.classify import classify_all
 from brew_to_ports.config_scan import scan_configs
+from brew_to_ports.cutover import CutoverAbort, decide_cutover
+from brew_to_ports.family import python_families
 from brew_to_ports.inventory import from_brew_json
 from brew_to_ports.path_suggest import default_path_file, suggest_path
 from brew_to_ports.plan import build_plan
@@ -49,9 +51,14 @@ def require_intel(arch: Optional[str] = None) -> str:
 
 def macos_version() -> str:
     try:
-        return subprocess.check_output(["sw_vers", "-productVersion"], text=True).strip()
+        return subprocess.check_output(["/usr/bin/sw_vers", "-productVersion"], text=True).strip()
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
+
+
+def require_not_root() -> None:
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        raise SystemExit("brew-to-ports: run as your login user, not sudo. Homebrew must not run as root.")
 
 
 def parse_macos_version(raw: str) -> Optional[Tuple[int, ...]]:
@@ -123,11 +130,26 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="FILE",
         help="write generated PATH file (default ~/.zsh_path.brew-to-ports). Also written with --script.",
     )
+    parser.add_argument(
+        "--migrate-runtime",
+        action="append",
+        default=[],
+        metavar="FORMULA",
+        help="non-TTY: cut over this python runtime (repeatable). TTY prompts instead.",
+    )
+    parser.add_argument(
+        "--i-acked-drop",
+        action="append",
+        default=[],
+        metavar="FORMULA",
+        help="non-TTY: ack dropping unmatched children of this runtime (repeatable).",
+    )
     return parser
 
 
 def main(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
+    require_not_root()
     require_intel()
     host_macos = require_macos()
     _check_runtime_python(allow_brew=args.allow_brew_python)
@@ -150,16 +172,23 @@ def main(argv: Optional[List[str]] = None) -> int:
         catalog = load_catalog()
 
     dest = Path(args.path_file).expanduser() if args.path_file else default_path_file()
-    plan = run_scan(
-        payload,
-        catalog,
-        allow_older_same_major=args.allow_older_same_major,
-        arch=os.uname().machine,
-        macos=host_macos,
-        brew_pfx=brew_prefix(),
-        ports_pfx=ports_prefix(),
-        path_file=dest,
-    )
+    try:
+        plan = run_scan(
+            payload,
+            catalog,
+            allow_older_same_major=args.allow_older_same_major,
+            arch=os.uname().machine,
+            macos=host_macos,
+            brew_pfx=brew_prefix(),
+            ports_pfx=ports_prefix(),
+            path_file=dest,
+            migrate_runtime=args.migrate_runtime,
+            acked_drop=args.i_acked_drop,
+            interactive_cutover=sys.stdin.isatty() and not args.migrate_runtime,
+        )
+    except CutoverAbort as exc:
+        print(str(exc) or "brew-to-ports: cutover aborted; wrote nothing.", file=sys.stderr)
+        return 2
     report = render_report(plan)
     sys.stdout.write(report)
     if args.report:
@@ -191,9 +220,19 @@ def run_scan(
     path_env: Optional[str] = None,
     rc_files=None,
     path_file: Optional[Path] = None,
+    migrate_runtime: Optional[List[str]] = None,
+    acked_drop: Optional[List[str]] = None,
+    interactive_cutover: bool = False,
 ) -> "Plan":
     packages = from_brew_json(payload)
     decisions = classify_all(packages, catalog, allow_older_same_major=allow_older_same_major)
+    families = python_families(packages, decisions, allow_older_same_major=allow_older_same_major)
+    choices = decide_cutover(
+        families,
+        migrate_runtime=migrate_runtime,
+        acked_drop=acked_drop,
+        interactive=interactive_cutover,
+    )
     plan = build_plan(
         packages,
         decisions,
@@ -203,6 +242,7 @@ def run_scan(
         ports_prefix=ports_pfx,
         catalog_source=catalog.source,
         allow_older_same_major=allow_older_same_major,
+        cutover=choices,
     )
     plan.configs = scan_configs(packages, plan.decisions, brew_pfx, ports_pfx)
     plan.path_advice = suggest_path(

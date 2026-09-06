@@ -99,6 +99,46 @@ class PlanSliceTests(unittest.TestCase):
         self.assertIn("libfoo", uninstalls)
         self.assertEqual(uninstalls.index("wget") < uninstalls.index("libfoo"), True)
 
+    def test_unrequested_toolchain_exception_not_uninstalled(self):
+        from brew_to_ports.models import Decision, KIND_FORMULA, Match, Package
+        from brew_to_ports.plan import build_plan
+
+        wget = Package(
+            name="wget", version="1", kind=KIND_FORMULA, origin="brew",
+            requested=True, runtime_deps=["gcc"],
+        )
+        gcc = Package(
+            name="gcc", version="15", kind=KIND_FORMULA, origin="brew",
+            requested=False, runtime_deps=[],
+        )
+        decisions = [
+            Decision(
+                brew_name="wget",
+                status=STATUS_MIGRATE,
+                requested=True,
+                match=Match(
+                    brew_name="wget", port_name="wget", confidence="exact",
+                    rule_id="exact_name", version_delta="equal",
+                ),
+                reasons=[],
+            ),
+            Decision(
+                brew_name="gcc",
+                status=STATUS_EXCEPTION,
+                requested=False,
+                match=None,
+                reasons=["exception category toolchain"],
+                category="toolchain",
+            ),
+        ]
+        plan = build_plan(
+            [wget, gcc], decisions,
+            arch="x86_64", macos="15", brew_prefix="/usr/local", ports_prefix="/opt/local",
+        )
+        uninstalls = [op.brew_name for op in plan.ops if op.action == "brew_uninstall"]
+        self.assertIn("wget", uninstalls)
+        self.assertNotIn("gcc", uninstalls)
+
     def test_keeper_still_pins_shared_dep(self):
         from brew_to_ports.models import Decision, KIND_FORMULA, Match, Package
         from brew_to_ports.plan import build_plan
@@ -260,6 +300,16 @@ class PlanSliceTests(unittest.TestCase):
         self.assertIn("port_sudo", script)
         self.assertIn("sudo_refresh", script)
         self.assertNotIn('run "$SUDO" "$BREW"', script)
+        import subprocess
+
+        chk = subprocess.run(["/bin/zsh", "-n"], input=script, text=True, capture_output=True)
+        self.assertEqual(chk.returncode, 0, chk.stderr)
+        empty = subprocess.run(
+            ["/bin/zsh", "-c", 'set -u; typeset -a BREW_AS; BREW_AS=(); : "${BREW_AS[@]}"'],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(empty.returncode, 0, empty.stderr)
 
     def test_portindex_sample_roundtrip(self):
         path = write_portindex_sample()
@@ -274,6 +324,16 @@ class HostGateTests(unittest.TestCase):
         with self.assertRaises(SystemExit) as ctx:
             require_intel("arm64")
         self.assertIn("Intel x86_64", str(ctx.exception))
+
+    def test_root_refused(self):
+        from unittest.mock import patch
+
+        from brew_to_ports.cli import require_not_root
+
+        with patch("os.geteuid", return_value=0):
+            with self.assertRaises(SystemExit) as ctx:
+                require_not_root()
+        self.assertIn("login user", str(ctx.exception))
 
     def test_intel_ok(self):
         from brew_to_ports.cli import require_intel
