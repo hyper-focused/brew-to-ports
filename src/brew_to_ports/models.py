@@ -84,6 +84,12 @@ class PathAdvice:
     rc_hits: List[str] = field(default_factory=list)
     collisions: List[str] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
+    path_owners: List[str] = field(default_factory=list)
+    idiom: str = ""  # zsh-array | export-path | mixed | unknown
+    extra_writers: List[str] = field(default_factory=list)
+    alias_hits: List[str] = field(default_factory=list)
+    linker_hits: List[str] = field(default_factory=list)
+    array_entries: List[str] = field(default_factory=list)
 
 
 @dataclass

@@ -7,7 +7,16 @@ import re
 from pathlib import Path
 from typing import List, Set, Tuple
 
-RC_NAMES = (".zshrc", ".zprofile", ".zlogin", ".bashrc", ".bash_profile", ".profile")
+# zsh: .zshenv runs for every shell (including zsh -c). PATH often lives there.
+RC_NAMES = (
+    ".zshenv",
+    ".zshrc",
+    ".zprofile",
+    ".zlogin",
+    ".bashrc",
+    ".bash_profile",
+    ".profile",
+)
 MAX_INCLUDE_DEPTH = 8
 
 # `source file` / `. file` after a newline, `&&`, or `;`
@@ -103,11 +112,11 @@ def _resolve_include(raw: str, *, from_file: Path, home: Path) -> Path | None:
         path = path.resolve()
     except OSError:
         return None
-    # Stay inside the user's home (or an explicit absolute they already own).
+    # User rc only. Do not follow Homebrew/MacPorts/antidote/plugin trees.
     home_resolved = home.resolve()
-    if _is_relative_to(path, home_resolved) or path.is_file():
-        return path if path.is_file() else None
-    return None
+    if not _is_relative_to(path, home_resolved):
+        return None
+    return path if path.is_file() else None
 
 
 def _is_relative_to(path: Path, prefix: Path) -> bool:

@@ -48,14 +48,17 @@ def render_report(plan: Plan) -> str:
     if plan.path_advice:
         lines.append("PATH ADVICE (not applied)")
         lines.append("-------------------------")
-        for note in plan.path_advice.notes:
+        advice = plan.path_advice
+        if advice.path_owners:
+            lines.append(f"  owner: {', '.join(advice.path_owners)}  idiom={advice.idiom or 'unknown'}")
+        for note in advice.notes:
             lines.append(f"  {note}")
-        if plan.path_advice.rc_hits:
-            lines.append("  rc files that already mention brew/ports PATH:")
-            for hit in plan.path_advice.rc_hits:
+        if advice.rc_hits:
+            lines.append("  rc files that touch PATH / brew prefixes:")
+            for hit in advice.rc_hits:
                 lines.append(f"    {hit}")
         lines.append("")
-        lines.append(snippet(plan.path_advice).rstrip())
+        lines.append(snippet(advice).rstrip())
         lines.append("")
     for note in plan.notes:
         lines.append(f"note: {note}")

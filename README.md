@@ -37,7 +37,7 @@ It does **not** silently rewrite your machine.
 ./migrate.sh                     # print what would happen
 ./migrate.sh --apply             # actually install ports / uninstall brew formulae
 
-PATH advice follows `source` / `.` includes (for example `~/.zsh_path` sourced from `~/.zshrc`) and tells you which file actually sets PATH. It still will not edit those files.
+PATH advice follows `source` / `.` includes under `$HOME` (`.zshenv`, `.zsh_path`, …), not Homebrew/antidote plugin trees. If PATH is a zsh `path=(...)` array, the suggestion is an array patch for that owner file — not a naive `export PATH=`. It still will not edit those files.
 ```
 
 ## Layout

@@ -51,6 +51,56 @@ class PathTests(unittest.TestCase):
             self.assertTrue(any(p.endswith(".zsh_path") for p in advice.rc_hits))
             self.assertTrue(any("zsh_path" in n for n in advice.notes))
 
+    def test_zshenv_collected_antidote_not_followed(self):
+        from brew_to_ports.adapters.shell_env import read_rc_files
+
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            (home / ".zshenv").write_text("source ~/.zsh_path\n", encoding="utf-8")
+            (home / ".zsh_path").write_text(
+                "path=(\n  $HOME/.local/bin\n  /usr/local/bin\n  $path\n)\n",
+                encoding="utf-8",
+            )
+            (home / ".zshrc").write_text(
+                "fpath=(~/.grok/completions/zsh $fpath)\n"
+                "source /usr/local/opt/antidote/share/antidote/antidote.zsh\n"
+                'alias cat="/usr/local/bin/bat --color=auto"\n',
+                encoding="utf-8",
+            )
+            (home / ".zprofile").write_text(
+                'eval "$(/usr/local/bin/brew shellenv)"\n'
+                "source ~/.zsh_path\n"
+                "# MacPorts Installer addition on 2026-09-05\n"
+                'export PATH="/opt/local/bin:/opt/local/sbin:$PATH"\n',
+                encoding="utf-8",
+            )
+            files = read_rc_files(home=home)
+            names = [p.name for p, _ in files]
+            self.assertIn(".zshenv", names)
+            self.assertIn(".zsh_path", names)
+            self.assertTrue(all("antidote" not in str(p) for p, _ in files))
+            advice = suggest_path("/usr/local/bin:/usr/bin", rc_files=files)
+            self.assertEqual(advice.idiom, "zsh-array")
+            self.assertTrue(any(p.endswith(".zsh_path") for p in advice.path_owners))
+            self.assertTrue(any("brew shellenv" in w for w in advice.extra_writers))
+            self.assertTrue(any("MacPorts installer" in w for w in advice.extra_writers))
+            self.assertTrue(advice.alias_hits)
+            text = snippet(advice)
+            self.assertIn("path=(", text)
+            self.assertNotIn('export PATH="', text)
+            self.assertIn("/opt/local/bin", text)
+            self.assertIn("$HOME/.local/bin", text)
+            self.assertIn("$path", text)
+            self.assertNotIn("/usr/bin", text)
+
+    def test_fpath_is_not_path_owner(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            zshrc = Path(tmp) / ".zshrc"
+            zshrc.write_text("fpath=(~/.grok/completions/zsh $fpath)\n", encoding="utf-8")
+            advice = suggest_path("/usr/bin", rc_files=[(zshrc, zshrc.read_text())])
+            self.assertEqual(advice.path_owners, [])
+            self.assertNotIn(str(zshrc), advice.rc_hits)
+
     def test_strips_trailing_slash_dupes(self):
         advice = suggest_path(
             "/opt/local/bin/:/usr/local/bin:/usr/bin",
