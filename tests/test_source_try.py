@@ -94,3 +94,76 @@ class RecipeTests(unittest.TestCase):
             dest = write_overlay(pkg, Path(tmp))
             self.assertTrue((dest / "Portfile").is_file())
             self.assertIn("pyenv", dest.parts)
+
+
+class PlanTrySourceTests(unittest.TestCase):
+    def _keep_decision(self, name):
+        from brew_to_ports.models import Decision, STATUS_KEEP
+
+        return Decision(
+            brew_name=name,
+            status=STATUS_KEEP,
+            match=None,
+            reasons=["no equivalent above match threshold"],
+            category="no_equivalent",
+            requested=True,
+        )
+
+    def test_source_built_unmatched_gets_overlay(self):
+        from brew_to_ports.models import STATUS_MIGRATE
+        from brew_to_ports.plan import build_plan
+
+        pkg = _pkg(
+            name="pyenv",
+            bottle=False,
+            source_url="https://github.com/pyenv/pyenv/archive/refs/tags/v2.8.5.tar.gz",
+            sha256="abc123",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            plan = build_plan(
+                [pkg],
+                [self._keep_decision("pyenv")],
+                arch="x86_64",
+                macos="15",
+                brew_prefix="/usr/local",
+                ports_prefix="/opt/local",
+                try_source_root=Path(tmp),
+            )
+        by = {d.brew_name: d for d in plan.decisions}
+        self.assertEqual(by["pyenv"].status, STATUS_MIGRATE)
+        self.assertEqual(by["pyenv"].category, "try_source")
+        self.assertTrue(any(op.action == "try_source" for op in plan.ops))
+
+    def test_bottled_unmatched_stays_on_brew(self):
+        from brew_to_ports.models import STATUS_KEEP
+        from brew_to_ports.plan import build_plan
+
+        pkg = _pkg(
+            name="pyenv",
+            bottle=True,
+            source_url="https://github.com/pyenv/pyenv/archive/refs/tags/v2.8.5.tar.gz",
+            sha256="abc123",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plan = build_plan(
+                [pkg],
+                [self._keep_decision("pyenv")],
+                arch="x86_64",
+                macos="15",
+                brew_prefix="/usr/local",
+                ports_prefix="/opt/local",
+                try_source_root=root,
+            )
+            by = {d.brew_name: d for d in plan.decisions}
+            self.assertEqual(by["pyenv"].status, STATUS_KEEP)
+            self.assertFalse(any(op.action == "try_source" for op in plan.ops))
+            self.assertEqual(list(root.rglob("Portfile")), [])
+
+    def test_allow_try_source_alias(self):
+        from brew_to_ports.cli import build_parser
+
+        args = build_parser().parse_args(["--allow-try-source"])
+        self.assertEqual(args.try_source, "DEFAULT")
+        args = build_parser().parse_args(["--try-source", "/tmp/overlay"])
+        self.assertEqual(args.try_source, "/tmp/overlay")

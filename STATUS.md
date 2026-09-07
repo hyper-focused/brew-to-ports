@@ -9,9 +9,10 @@ Intel Homebrew → MacPorts planner. Scan is read-only. `migrate.sh --apply` is 
 - Keep-set: requested keep/exception + casks pin brew runtime deps; leftover unrequested deps of migrators can go
 - Exceptions: runtime, toolchain, **service** (httpd/mysql/nginx/unbound stay unless a later cutover)
 - Python / php / node family cutover (TTY `[m]/[s]/[q]` then `yes`; non-TTY `--migrate-runtime` + `--i-acked-drop`). Ruby is not offered. php HOLD (`--i-acked-config`) still applies.
-- `--try-source`: overlay Portfiles (github noarch, Go, autoreconf); `port -D` install; brew keg stays on failure
+- `--try-source` / `--allow-try-source`: overlay Portfiles for **source-built** unmatched kegs (github noarch, Go, autoreconf); `port -D` install; brew keg stays on failure; bottled unmatched stay on brew
 - `--allow-older-same-major`
 - Privileges: never `sudo brew`; one `sudo -v` for MacPorts; keepalive + `sudo -n`
+- `--apply` reminds: Time Machine or a copy of Cellar/Homebrew/etc/var first (not just bin/sbin)
 - PATH dump to a sibling file; does not edit rc
 - Custom brew confs listed with paths (vendor baseline vs live; bottle owns the file); not copied
 - Tests: `PYTHONPATH=src python3 -m unittest discover -s tests -q`

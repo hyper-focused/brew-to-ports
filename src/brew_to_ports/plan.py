@@ -203,6 +203,8 @@ def _apply_try_source(
     for pkg in packages:
         if not pkg.requested or pkg.kind != KIND_FORMULA:
             continue
+        if pkg.bottle:
+            continue
         d = dmap.get(pkg.name)
         if d is None or d.status != STATUS_KEEP:
             continue

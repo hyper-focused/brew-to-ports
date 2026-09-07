@@ -279,6 +279,8 @@ class PlanSliceTests(unittest.TestCase):
         script = render_script(self.plan)
         self.assertIn("APPLY=0", script)
         self.assertIn("DRY-RUN", script)
+        self.assertIn("Time Machine", script)
+        self.assertIn("Cellar,Caskroom,Homebrew,etc,var", script)
         self.assertIn("exec /bin/zsh", script)
         self.assertIn("/usr/bin/uname -m", script)
         self.assertIn("x86_64", script)

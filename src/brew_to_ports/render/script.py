@@ -111,6 +111,9 @@ run() {
 
 if [[ "$APPLY" -eq 0 ]]; then
   echo "DRY-RUN (pass --apply to execute). No packages will be installed or uninstalled."
+else
+  echo "APPLY: installs MacPorts ports and uninstalls brew kegs."
+  echo "This script does not back up Homebrew. Time Machine, or a copy of /usr/local/{Cellar,Caskroom,Homebrew,etc,var} plus brew bundle dump, first. bin/sbin are mostly symlinks."
 fi
 '''
 

@@ -52,6 +52,8 @@ No pip dependencies. Python 3.9+ stdlib only.
 
 The scan is read-only. Do not expect `./brew-to-ports` to `brew uninstall` anything. `migrate.sh --apply` is the only mutator; it already runs `brew autoremove` at the **end**.
 
+**Before `--apply`:** this tool does not back up Homebrew. Take a Time Machine backup of the Mac, **or** copy `/usr/local/{Cellar,Caskroom,Homebrew,etc,var}` plus `brew bundle dump` and the cask apps under `/Applications`. `bin`/`sbin` are mostly Cellar symlinks — they are not a backup. Then dry-run `./migrate.sh` and only then `--apply`.
+
 Run the planner and `migrate.sh` as **your login user**, never `sudo ./migrate.sh`. Homebrew owns `/usr/local` and your launchd services; `sudo brew` is how you get a root-owned cellar. The script `sudo`s **only** `port` (`selfupdate` / `install`). `--apply` asks for your sudo password **once** (`sudo -v`) and keeps the ticket alive; it does not store the password. Later `port` calls use `sudo -n` (fail if the ticket died, no 76 prompts). If you do `sudo ./migrate.sh` anyway, it drops `brew` back to `$SUDO_USER` and refuses if it cannot tell who that is. Casks such as XQuartz write `/opt/X11` or `/Applications` and need root to uninstall. `brew` (as you) invokes `sudo` for that; we still never `sudo brew`. The same `--apply` ticket is refreshed before the uninstall phase so that is not a second password storm.
 
 **Before you scan** (optional hygiene — you run these, not the planner):
@@ -77,7 +79,7 @@ If that list is junk, run them for real, **then** scan. If it names something yo
 
 On a TTY, python / php / node families get `[m]igrate` / `[s]kip` / `[q]uit` (then `yes` if anything would be deleted). `q` writes nothing. Non-TTY stays dual-stack unless `--migrate-runtime python@3.13` (repeat for `php`, `node@22`, …) and `--i-acked-drop` when unmatched children would be dropped. php uninstall still needs `--i-acked-config php` (php.ini). Ruby is not offered — left as a brew dep. php/node older-same-major only appear with `--allow-older-same-major`.
 
-`--try-source` writes best-effort overlay Portfiles (github noarch, Go, autoreconf) under `~/.brew-to-ports/overlay` and plans `port -D` install. cmake/rust/PyPI/mysql are not attempted. Failed overlay install leaves the brew keg. Does not edit `sources.conf`.
+`--try-source` / `--allow-try-source` is for brew kegs **built from source** that have no MacPorts equivalent: overlay Portfiles (github noarch, Go, autoreconf) under `~/.brew-to-ports/overlay` and `port -D` install. A real port match still wins. Bottled kegs stay on brew. cmake/rust/PyPI/mysql are not attempted. Failed overlay install leaves the brew keg. Does not edit `sources.conf`.
 
 `--brew-json FILE` / `--portindex FILE` run against dumps (useful for tests and for machines that cannot talk to the PortIndex).
 
@@ -87,7 +89,7 @@ On a TTY, python / php / node families get `[m]igrate` / `[s]kip` / `[q]uit` (th
 - Match to MacPorts: exact name, aliases, `@version` compact (`php@8.5` → `php85`), stem maps (`python-foo` → `py314-foo`, `node@22` → `nodejs22`, `ruby-`/`perl-`/`r-` modules), homepage family pick (`ffmpeg-full` → `ffmpeg-devel`) only when names share a non-generic stem.
 - Keep-set: requested brew survivors (and casks) pin their brew runtime graph. Unrequested leftovers of migrators can go; MacPorts already pulled what it needs. Service/runtime/toolchain exceptions are not leftover-uninstalled.
 - Python / php / node family cutover (plan-time). Ruby stays on brew.
-- `--try-source` overlay Portfiles for some unmatched formulae (not cmake/rust/PyPI).
+- `--try-source` / `--allow-try-source`: overlay Portfiles for source-built brew kegs with no port (not cmake/rust/PyPI).
 - PATH advice from `.zshenv` / `.zprofile` / sourced files under `$HOME` (not antidote/Cellar).
 - Custom brew config files listed with a guessed MacPorts path (not copied). Stock bottle / `.default` / php.ini-production copies are omitted.
 - Best-effort `/usr/local` → `/opt/local` rewrites for aliases and `LDFLAGS`/`CPPFLAGS`.

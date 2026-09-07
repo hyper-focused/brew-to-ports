@@ -147,10 +147,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--try-source",
+        "--allow-try-source",
         nargs="?",
         const="DEFAULT",
+        dest="try_source",
         metavar="DIR",
-        help="write overlay Portfiles for tryable no-match formulae and plan port -D install (default ~/.brew-to-ports/overlay).",
+        help=(
+            "if a brew keg was built from source and has no MacPorts equivalent, "
+            "write an overlay Portfile and plan port -D install "
+            "(default ~/.brew-to-ports/overlay). Bottled kegs stay on brew."
+        ),
     )
     return parser
 
