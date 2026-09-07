@@ -140,10 +140,9 @@ def render_script(plan: Plan) -> str:
     uninstalls = [op for op in plan.ops if op.action == "brew_uninstall"]
 
     if plan.configs:
-        lines.append("# config/state on brew prefix (not copied)")
+        lines.append("# custom brew config (not copied — adjust the MacPorts file)")
         for cfg in plan.configs:
-            extra = " brew-paths" if cfg.contains_brew_paths else ""
-            lines.append(f"#   {cfg.brew_package}: {cfg.brew_path} -> {cfg.guessed_ports_path}{extra}")
+            lines.append(f"#   {cfg.brew_package}: {cfg.brew_path} -> {cfg.guessed_ports_path}")
         lines.append("")
 
     if plan.cutover:
@@ -163,6 +162,10 @@ def render_script(plan: Plan) -> str:
     for op in tries:
         lines.append(f"echo '--> try-source {op.port_name} from overlay {op.overlay_dir}'")
         lines.append(f'try_source_port {_sh_single(op.port_name)} {_sh_single(op.overlay_dir)}')
+        lines.append("")
+
+    if uninstalls:
+        lines.append("ensure_sudo")
         lines.append("")
 
     for op in uninstalls:
@@ -209,6 +212,17 @@ sudo_refresh() {
   else
     /usr/bin/sudo -n -v >/dev/null 2>&1
   fi
+}
+
+ensure_sudo() {
+  [[ "$APPLY" -eq 1 ]] || return 0
+  [[ "$(/usr/bin/id -u)" -eq 0 ]] && return 0
+  sudo_refresh && return 0
+  echo "Enter your sudo password for MacPorts package installations."
+  /usr/bin/sudo -v || {
+    echo "brew-to-ports: sudo is required (cask uninstall / port). Aborting." >&2
+    exit 1
+  }
 }
 
 port_sudo() {
@@ -308,6 +322,7 @@ uninstall_brew() {
       echo "skip: brew cask $name not installed"
       return 0
     fi
+    ensure_sudo
     run "${BREW_AS[@]}" "$BREW" uninstall --cask "$name"
     return 0
   fi

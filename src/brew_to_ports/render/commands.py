@@ -51,9 +51,8 @@ def render_commands(plan: Plan) -> str:
             lines.append(raw)
         lines.append("")
     if plan.configs:
-        lines.append("# config/state left on brew prefix (not copied)")
+        lines.append("# custom brew config (not copied — adjust the MacPorts file)")
         for cfg in plan.configs:
-            extra = " brew-paths" if cfg.contains_brew_paths else ""
-            lines.append(f"#   {cfg.brew_package}: {cfg.brew_path} -> {cfg.guessed_ports_path}{extra}")
+            lines.append(f"#   {cfg.brew_package}: {cfg.brew_path} -> {cfg.guessed_ports_path}")
         lines.append("")
     return "\n".join(lines)

@@ -60,13 +60,13 @@ def render_report(plan: Plan) -> str:
             lines.append(f"  {name}")
         lines.append("")
     if plan.configs:
-        lines.append("CONFIG / STATE (will not be copied)")
-        lines.append("----------------------------------")
+        lines.append("CUSTOM CONFIG (not copied — adjust the MacPorts file)")
+        lines.append("----------------------------------------------------")
         for cfg in plan.configs:
-            lines.append(
-                f"  {cfg.brew_package}: {cfg.brew_path} -> {cfg.guessed_ports_path} "
-                f"[{cfg.kind}] brew-paths={cfg.contains_brew_paths} — {cfg.note}"
-            )
+            lines.append(f"  {cfg.brew_package}: {cfg.brew_path}")
+            lines.append(f"      ports: {cfg.guessed_ports_path}")
+            if cfg.note:
+                lines.append(f"      {cfg.note}")
         lines.append("")
     if plan.path_advice:
         lines.append("PATH")

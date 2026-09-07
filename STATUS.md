@@ -13,7 +13,8 @@ Intel Homebrew → MacPorts planner. Scan is read-only. `migrate.sh --apply` is 
 - `--allow-older-same-major`
 - Privileges: never `sudo brew`; one `sudo -v` for MacPorts; keepalive + `sudo -n`
 - PATH dump to a sibling file; does not edit rc
-- Tests: `PYTHONPATH=src python3 -m unittest discover -s tests -q` (73)
+- Custom brew confs listed with paths (vendor baseline vs live); not copied
+- Tests: `PYTHONPATH=src python3 -m unittest discover -s tests -q`
 
 ## Not doing
 
@@ -42,4 +43,5 @@ Remaining keep-set after python + same-major + try-source on the author’s cell
 | `cutover.py` | `CutoverChoice`; TTY + flags |
 | `source_try.py` | overlay Portfile text + shape |
 | `plan.py` | keep-set, cutover overlay, try-source overlay, ops |
+| `config_scan.py` | brew conf inventory; custom vs vendor baseline; never copies |
 | `render/script.py` | migrate.sh (dry-run default) |

@@ -52,7 +52,7 @@ No pip dependencies. Python 3.9+ stdlib only.
 
 The scan is read-only. Do not expect `./brew-to-ports` to `brew uninstall` anything. `migrate.sh --apply` is the only mutator; it already runs `brew autoremove` at the **end**.
 
-Run the planner and `migrate.sh` as **your login user**, never `sudo ./migrate.sh`. Homebrew owns `/usr/local` and your launchd services; `sudo brew` is how you get a root-owned cellar. The script `sudo`s **only** `port` (`selfupdate` / `install`). `--apply` asks for your sudo password **once** (`sudo -v`) and keeps the ticket alive; it does not store the password. Later `port` calls use `sudo -n` (fail if the ticket died, no 76 prompts). If you do `sudo ./migrate.sh` anyway, it drops `brew` back to `$SUDO_USER` and refuses if it cannot tell who that is. A few casks may prompt for sudo on their own — that is brew calling sudo, not us wrapping brew.
+Run the planner and `migrate.sh` as **your login user**, never `sudo ./migrate.sh`. Homebrew owns `/usr/local` and your launchd services; `sudo brew` is how you get a root-owned cellar. The script `sudo`s **only** `port` (`selfupdate` / `install`). `--apply` asks for your sudo password **once** (`sudo -v`) and keeps the ticket alive; it does not store the password. Later `port` calls use `sudo -n` (fail if the ticket died, no 76 prompts). If you do `sudo ./migrate.sh` anyway, it drops `brew` back to `$SUDO_USER` and refuses if it cannot tell who that is. Casks such as XQuartz write `/opt/X11` or `/Applications` and need root to uninstall. `brew` (as you) invokes `sudo` for that; we still never `sudo brew`. The same `--apply` ticket is refreshed before the uninstall phase so that is not a second password storm.
 
 **Before you scan** (optional hygiene — you run these, not the planner):
 
@@ -89,6 +89,7 @@ On a TTY, python / php / node families get `[m]igrate` / `[s]kip` / `[q]uit` (th
 - Python / php / node family cutover (plan-time). Ruby stays on brew.
 - `--try-source` overlay Portfiles for some unmatched formulae (not cmake/rust/PyPI).
 - PATH advice from `.zshenv` / `.zprofile` / sourced files under `$HOME` (not antidote/Cellar).
+- Custom brew config files listed with a guessed MacPorts path (not copied). Stock bottle / `.default` / php.ini-production copies are omitted.
 - Best-effort `/usr/local` → `/opt/local` rewrites for aliases and `LDFLAGS`/`CPPFLAGS`.
 - Generated `migrate.sh`: dry-run default, restart-safe skips, `brew services stop` before uninstall, `brew autoremove` at the end. `sudo` only `port`.
 

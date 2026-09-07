@@ -300,6 +300,8 @@ class PlanSliceTests(unittest.TestCase):
         self.assertIn("port_sudo", script)
         self.assertIn("sudo_refresh", script)
         self.assertNotIn('run "$SUDO" "$BREW"', script)
+        self.assertIn("ensure_sudo", script)
+        self.assertIn('uninstall --cask', script)
         import subprocess
 
         chk = subprocess.run(["/bin/zsh", "-n"], input=script, text=True, capture_output=True)
