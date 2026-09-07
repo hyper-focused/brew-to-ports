@@ -50,6 +50,9 @@ def recipe_for(pkg: Package) -> Optional[TryRecipe]:
         return None
     if pkg.kind != "formula":
         return None
+    n = pkg.name.lower()
+    if n.startswith(("mysql", "mariadb", "percona")):
+        return None
     gh = _parse_github(pkg.source_url)
     builds = {_base(b) for b in pkg.build_deps}
     if "cmake" in builds or "meson" in builds or "rust" in builds or "maturin" in builds:

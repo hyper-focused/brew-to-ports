@@ -64,6 +64,16 @@ class RecipeTests(unittest.TestCase):
         self.assertEqual(rec.shape, SHAPE_AUTORECONF)
         self.assertIn("use_autoreconf      yes", rec.portfile)
 
+    def test_mysql_family_never_gets_an_overlay(self):
+        for name in ("mysql", "mysql-client", "mariadb", "percona"):
+            rec = recipe_for(
+                _pkg(
+                    name=name,
+                    source_url="https://github.com/mysql/mysql-server/archive/refs/tags/8.4.0.tar.gz",
+                )
+            )
+            self.assertIsNone(rec, name)
+
     def test_cmake_skipped(self):
         rec = recipe_for(
             _pkg(

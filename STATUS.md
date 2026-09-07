@@ -7,7 +7,7 @@ Intel Homebrew → MacPorts planner. Scan is read-only. `migrate.zsh --apply` is
 - Intel x86_64 only; macOS 13 Ventura through 26 Tahoe (`sw_vers` 26 is valid)
 - Matcher: exact, aliases, `@version` compact, stem maps, homepage **with shared non-generic stem**, family pick
 - Keep-set: requested keep/exception + casks pin brew runtime deps; leftover unrequested deps of migrators can go
-- Exceptions: runtime, toolchain, **service** (httpd/mysql/nginx/unbound stay unless a later cutover)
+- Exceptions: runtime, toolchain, **service** (httpd/nginx/unbound stay). **MySQL/MariaDB/Percona are radioactive** — server, `mysql-client`, connectors; no migrate, no try-source overlay
 - Python / php / node family cutover (TTY `[m]/[s]/[q]` then `yes`; non-TTY `--migrate-runtime` + `--i-acked-drop`). Ruby is not offered. php HOLD (`--i-acked-config`) still applies. MacPorts nodejs: only the newest major is installed (they conflict)
 - `--try-source` / `--allow-try-source`: overlay Portfiles for **source-built** unmatched kegs (github noarch, Go, autoreconf); `port -D` install; brew keg stays on failure; bottled unmatched stay on brew
 - `--allow-older-same-major`
@@ -30,12 +30,13 @@ Intel Homebrew → MacPorts planner. Scan is read-only. `migrate.zsh --apply` is
 - Storing a sudo password
 - Editing `sources.conf`, user rc, or `/etc/zprofile`
 - Copying nginx.conf / databases / TLS keys
+- Touching brew MySQL / MariaDB / Percona (install, overlay, or uninstall)
 - Cellar-specific `aliases.json` entries
 - `path_helper` as migrate teardown (it prepends `/usr/local/bin`; it is not undo)
 
 ## Next (when we say go)
 
-1. **try-source shapes we skipped** — cmake, rust/PyPI, mysql (only if a destroot strategy is boring)
+1. **try-source shapes we skipped** — cmake, rust/PyPI (only if a destroot strategy is boring). MySQL/MariaDB are not on this list; they stay radioactive
 2. **Cask Aqua cutover** — iTerm/Audacity already match; default is still keep-on-brew
 
 Remaining keep-set after python + same-major + try-source on the author’s cellar was mostly casks, ImageMagick/HandBrake (older major), pyenv/pydantic (no equivalent), and leftover brew deps of keepers. That is policy, not unnamed packages.

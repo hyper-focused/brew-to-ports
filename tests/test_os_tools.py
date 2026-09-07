@@ -71,7 +71,7 @@ class OsToolsTests(unittest.TestCase):
         self.assertIn(INTEL_BREW, str(ctx.exception))
 
     def test_wrapper_pins_os_path_and_stashes_user_path(self):
-        wrapper = (repo_root() / "brew-to-ports").read_text(encoding="utf-8")
+        wrapper = (repo_root() / "brew-to-ports.zsh").read_text(encoding="utf-8")
         self.assertIn("unsetopt aliases", wrapper)
         self.assertIn("BREW_TO_PORTS_USER_PATH", wrapper)
         self.assertIn("PATH=/usr/bin:/bin:/usr/sbin:/sbin", wrapper)

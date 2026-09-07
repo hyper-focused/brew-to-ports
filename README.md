@@ -1,61 +1,74 @@
 # brew-to-ports
 
-**Don't Panic.** Homebrew has classified every Intel Mac as [Tier 3](https://docs.brew.sh/Support-Tiers): no new bottles, no CI, and the lights go out around September 2027. Homebrew's own docs point those machines at [MacPorts](https://www.macports.org). This is the towel for that trip.
+**Don't Panic.** 
 
-It **plans** a Homebrew → MacPorts move. It does **not** silently rewrite the machine. The only thing that mutates packages is `migrate.zsh --apply`, which you run on purpose, after a dry-run, after a backup, preferably after coffee.
+Homebrew has classified every Intel Mac as [Tier 3](https://docs.brew.sh/Support-Tiers): no new bottles, no CI, and the lights go out around September 2027. Homebrew's own docs point those machines at [MacPorts](https://www.macports.org). This is the towel for that trip.
 
-**Apple Silicon is a hard fail.** Homebrew is still Tier 1 there. You don't need this. Go outside.
+It first **plans** a Homebrew → MacPorts move. It does **not** silently take any destructive action. Once you're happy with the plan, have done a dry-run, and are feeling lucky, run the generated script as a normal user `migrate.zsh --apply`. Then, go grab a coffee, or a tea if you can find one.
+
+**Apple Silicon** You don't need this. Homebrew is still Tier 1. Go outside, touch some grass, and enjoy your Mac from **this** decade. Maybe go check out some Norwegian fjords.
 
 ---
 
 ## Why this exists
 
-Intel Homebrew became a source-build farm. Compiling `wget` from source on a 2019 MacBook Pro is a lifestyle, not a package manager. MacPorts still ships Intel bottles (mostly) and still targets the current tree (Ventura+).
+Intel Homebrew has become a source-build farm. Compiling `wget` from source on a 2018 MacBook Pro is a lifestyle, not a package manager. Just ask the Gentoo guys, if you can find any who didn't die of old age waiting for Full Chromium to compile. 
 
-We wanted one conservative pass: inventory the cellar, match what has a real equivalent, install those ports, then uninstall the brew kegs **only if** the port is actually there. Dual-stack until you say otherwise. No `sudo brew`. No surprise `php.ini` deletion. No "we copied your nginx.conf and now you have two of them and neither works."
+MacPorts still ships Intel packages and supports the current tree (Ventura and up). It's not the hero we wanted, but it's the one that understands some people still use hardware that was around when Baby Shark was the latest hit.
 
-If that sounds like the opposite of a rewrite-in-place, good. That's the product.
+However, it became clear pretty quickly we would learn the ultimate question before finishing a manual migration. So we came up with a plan: inventory the cellar, match what has a real equivalent, install those ports, then uninstall the brew kegs **only if** the port is actually there. Make sure the script doesn't do anything stupid - no `sudo brew`. No surprise `php.ini` deletion. No "we copied your nginx.conf and now you have two of them and neither works."
+
+If that sounds like the opposite of a rewrite-in-place, good. That's the idea. We've lived through an accidental db version upgrade. That's a week of our lives we'll never get back.
 
 ---
 
-## I'm too lazy to read — copy/paste this now
+## Too lazy or impatient to read? Here you go. Run the script, follow the prompts, and you're probably good to go. 
 
-Backup first. Time Machine, **or** a copy of `/usr/local/{Cellar,Caskroom,Homebrew,etc,var}` plus `brew bundle dump`. `bin`/`sbin` are mostly symlinks. They are not a backup. Hitchhiker's Guide rule: know where your towel (and your Cellar) is.
+So, you're the kind of person who tears the tags off of mattresses, eh? Backup first. Time Machine, **or** a copy of `/usr/local/{Cellar,Caskroom,Homebrew,etc,var}` plus `brew bundle dump`. `bin`/`sbin` are mostly symlinks. They are not a backup. Hitchhiker's Guide rule: know where your towel (and your Cellar) is.
+
 
 ```sh
+# install
 git clone https://github.com/hyper-focused/brew-to-ports.git
 cd brew-to-ports
-chmod +x brew-to-ports
+chmod +x brew-to-ports.zsh
 
-# optional hygiene (you run these, not us)
+# optional hygiene (probably a good idea, the script intentionally doesn't run them)
 brew autoremove --dry-run
 brew cleanup --dry-run
 
-# as your login user — never sudo ./brew-to-ports
-./brew-to-ports --allow-older-same-major
-# TTY: python/php/node [m]igrate [s]kip [q]uit
-# then: Dry-run migrate.zsh now? [Y/n]   ← Enter is yes, still a dry-run
+# as your login user — never sudo
+./brew-to-ports.zsh
 
 # read the summary. then the log. then the dry-run. then:
-./migrate.zsh --apply --i-acked-config php@8.4   # only if php.ini HOLD applies
+./migrate.zsh --apply
 
 # after it finishes: NEW TERMINAL
+
 # then copy-paste the `sudo port select --set …` lines from the summary
-./brew-to-ports --allow-older-same-major         # wave 2
+
+# If you aren't concerned with minor version differences, do a second run:
+./brew-to-ports.zsh --allow-older-same-major 
+./migrate.zsh --apply
 ```
 
-No pip. No venv. Apple `/usr/bin/python3` and `/bin/zsh` only.
+No pip needed. No venv. Uses Apple `/usr/bin/python3`, `/bin/zsh`, and other utilities / runtimes only.
 
 ---
 
-## Hard requirements (the universe, not our opinion)
+## Requirements - make sure you have these or you might break stuff. 
 
-This runs **on the Intel Mac being migrated**. Not a Linux CI box pretending. Not your M4.
+Homebrew
+MacPorts
+Xcode 
+A good sense of humor
+
+This runs **on the Intel Mac being migrated**.
 
 | Must be | Or we refuse |
 |---|---|
 | Intel **x86_64** | Apple Silicon (`uname -m` is not a negotiation) |
-| macOS **13 Ventura through 26 Tahoe** | Monterey and older. MacPorts' *current tree* is Ventura+. We don't invent a second OS class. |
+| macOS **13 Ventura through 26 Tahoe** | Monterey and older. MacPorts' *current tree* is Ventura+. |
 | Apple `/bin/zsh` | The wrapper re-execs it so brew zsh can die mid-apply |
 | Xcode CLT; `/usr/bin/python3` **3.9.6+** | That's what Ventura+ CLT ships. No brew Python, no python.org, no venv. `--allow-brew-python` exists as a fire exit, not a plan. |
 | Homebrew at `/usr/local` | Intel prefix. `brew info --json=v2 --installed` must work |

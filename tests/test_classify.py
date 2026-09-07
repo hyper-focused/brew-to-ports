@@ -78,6 +78,20 @@ class ClassifyTests(unittest.TestCase):
         d2 = classify_one(pkg, self.catalog, aliases=self.aliases, allow_older_same_major=True)
         self.assertEqual(d2.status, STATUS_MIGRATE)
 
+    def test_mysql_family_is_radioactive_service(self):
+        for name in ("mysql", "mysql@8.4", "mysql-client", "mariadb", "mariadb@11.4", "percona"):
+            pkg = Package(
+                name=name,
+                version="1",
+                kind="formula",
+                origin="brew",
+                tap="homebrew/core",
+                requested=True,
+            )
+            d = classify_one(pkg, self.catalog, aliases=self.aliases)
+            self.assertEqual(d.status, STATUS_EXCEPTION, name)
+            self.assertEqual(d.category, "service", name)
+
     def test_httpd_is_service_exception(self):
         pkg = Package(
             name="httpd",
