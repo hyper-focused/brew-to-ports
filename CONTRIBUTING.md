@@ -31,4 +31,4 @@ No live `brew` / `port` required for CI.
 
 ## Scope
 
-Intel x86_64, macOS 13 Ventura through 26 Tahoe (`sw_vers` 26 is valid; do not treat majors >15 as invalid). Generated `migrate.zsh` must stay dry-run unless `--apply`. Never `sudo brew`; sudo only `port`. Do not write user rc files. Do not copy config/state. See [STATUS.md](STATUS.md).
+Intel x86_64, macOS 13 Ventura through 26 Tahoe (`sw_vers` 26 is valid; do not treat majors >15 as invalid). Generated `migrate.zsh` must stay dry-run unless `--apply`. Never `sudo brew`; sudo only `port`. Do not write user rc files or `/etc/zprofile`. Do not copy config/state. Migrator process PATH is Apple `/usr/bin:/bin:/usr/sbin:/sbin` only; call brew/port by absolute path; no bare `cat`/`ls`/`sed`. Tests may use `bat`/starship as **fixtures** (a fake user's rc). Product code must not call those. See [STATUS.md](STATUS.md).
