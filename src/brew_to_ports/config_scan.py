@@ -65,6 +65,8 @@ def scan_configs(
         if d is not None and d.match is not None and d.match.port_name:
             port_name = d.match.port_name
         for path in _iter_conf_files(prefix, pkg):
+            if not _pkg_owns_conf(path, pkg, packages, prefix):
+                continue
             kind = "conf" if path.is_file() else "data"
             if stateful and kind != "conf":
                 kind = "state"
@@ -174,6 +176,56 @@ def _formula_stem_version(name: str) -> Tuple[str, str]:
         return name, ""
     stem, ver = name.split("@", 1)
     return stem, ver
+
+
+def _pkg_owns_conf(
+    path: Path, pkg: Package, packages: Sequence[Package], prefix: Path
+) -> bool:
+    """Prefer the formula whose bottle shipped this etc path (nano vs nanorc)."""
+    bottled = [p for p in packages if _bottle_rel_file(prefix, p, path) is not None]
+    if bottled:
+        return any(p.name == pkg.name for p in bottled)
+    if _bottle_etc(prefix, pkg) is not None:
+        return False
+    return _under_exclusive_root(path, pkg, prefix, packages)
+
+
+def _bottle_rel_file(prefix: Path, pkg: Package, path: Path) -> Optional[Path]:
+    bottle = _bottle_etc(prefix, pkg)
+    if bottle is None:
+        return None
+    etc = prefix / "etc"
+    if not _is_relative_to(path, etc):
+        return None
+    candidate = bottle / path.relative_to(etc)
+    return candidate if candidate.is_file() else None
+
+
+def _under_exclusive_root(
+    path: Path, pkg: Package, prefix: Path, packages: Sequence[Package]
+) -> bool:
+    etc = prefix / "etc"
+    name = pkg.name
+    names = {p.name for p in packages}
+    exact = [
+        etc / f"{name}.conf",
+        etc / f"{name}.cnf",
+        etc / f"{name}.ini",
+        etc / f"{name}config",
+    ]
+    if f"{name}rc" not in names:
+        exact.append(etc / f"{name}rc")
+    if path in exact:
+        return True
+    namedir = etc / name
+    if namedir.is_dir() and _is_relative_to(path, namedir):
+        return True
+    stem, ver = _formula_stem_version(name)
+    if ver:
+        verdir = etc / stem / ver
+        if verdir.is_dir() and _is_relative_to(path, verdir):
+            return True
+    return False
 
 
 def _custom_reason(path: Path, pkg: Package, prefix: Path) -> Tuple[bool, str]:

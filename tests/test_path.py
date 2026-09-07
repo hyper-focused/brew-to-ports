@@ -261,7 +261,32 @@ class ConfigScanTests(unittest.TestCase):
             nanorc.write_text(text + "set linenumbers\n", encoding="utf-8")
             findings = scan_configs([nano], [nano_d], str(prefix), "/opt/local")
             self.assertEqual(len(findings), 1)
+            self.assertEqual(findings[0].brew_package, "nano")
             self.assertTrue(findings[0].brew_path.endswith("nanorc"))
+
+    def test_nanorc_formula_does_not_claim_nano_etc(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            prefix = Path(tmp)
+            etc = prefix / "etc"
+            etc.mkdir()
+            live = etc / "nanorc"
+            stock = "include /usr/local/share/nano/*.nanorc\n"
+            live.write_text(stock + "set linenumbers\n", encoding="utf-8")
+            bottle = prefix / "Cellar" / "nano" / "9.2" / ".bottle" / "etc"
+            bottle.mkdir(parents=True)
+            (bottle / "nanorc").write_text(stock, encoding="utf-8")
+            nano, nano_d = self._migrate("nano", "9.2")
+            extra, extra_d = self._migrate("nanorc", "2020.10.10")
+            findings = scan_configs(
+                [nano, extra], [nano_d, extra_d], str(prefix), "/opt/local"
+            )
+            self.assertEqual(len(findings), 1)
+            self.assertEqual(findings[0].brew_package, "nano")
+            live.write_text(stock, encoding="utf-8")
+            findings = scan_configs(
+                [nano, extra], [nano_d, extra_d], str(prefix), "/opt/local"
+            )
+            self.assertEqual(findings, [])
 
     def test_keg_extension_dropin_is_stock(self):
         with tempfile.TemporaryDirectory() as tmp:

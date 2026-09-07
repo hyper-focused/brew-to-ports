@@ -13,7 +13,7 @@ Intel Homebrew → MacPorts planner. Scan is read-only. `migrate.sh --apply` is 
 - `--allow-older-same-major`
 - Privileges: never `sudo brew`; one `sudo -v` for MacPorts; keepalive + `sudo -n`
 - PATH dump to a sibling file; does not edit rc
-- Custom brew confs listed with paths (vendor baseline vs live); not copied
+- Custom brew confs listed with paths (vendor baseline vs live; bottle owns the file); not copied
 - Tests: `PYTHONPATH=src python3 -m unittest discover -s tests -q`
 
 ## Not doing
