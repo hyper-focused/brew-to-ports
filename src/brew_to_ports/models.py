@@ -143,6 +143,19 @@ class CutoverChoice:
 
 
 @dataclass
+class SelectLink:
+    """Writer: select.py. Copy-paste `port select --set` for a runtime group."""
+
+    group: str
+    option: str
+    selected: str = ""
+
+    @property
+    def command(self) -> str:
+        return f"sudo port select --set {self.group} {self.option}"
+
+
+@dataclass
 class Plan:
     arch: str
     macos: str
@@ -158,3 +171,4 @@ class Plan:
     notes: List[str] = field(default_factory=list)
     cutover: List[CutoverChoice] = field(default_factory=list)
     try_source_root: str = ""
+    select_links: List[SelectLink] = field(default_factory=list)

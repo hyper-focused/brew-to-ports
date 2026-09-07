@@ -1,11 +1,12 @@
-"""Generate migrate.sh. Defaults to dry-run. Does not execute it."""
+"""Generate migrate.zsh. Defaults to dry-run. Does not execute it."""
 
 from __future__ import annotations
 
 from brew_to_ports.models import Plan
+from brew_to_ports.select import format_select_block
 
 HEADER = r'''#!/bin/zsh
-# brew-to-ports migrate.sh — dry-run unless --apply. Does not copy configs.
+# brew-to-ports migrate.zsh — dry-run unless --apply. Does not copy configs.
 # Interpreter is /bin/zsh so brew zsh can be uninstalled mid-run.
 set -euo pipefail
 
@@ -14,16 +15,15 @@ if [[ -z "${BREW_TO_PORTS_SYS_ZSH:-}" ]]; then
   exec /bin/zsh "$0" "$@"
 fi
 
-# User gnubin/aliases are not this script's runtime. brew/port are absolute;
-# OS dirs stay first so hashed `sleep`/`sed` cannot point at a keg we delete.
+# Apple system PATH only. gnubin / keg / ports bins cannot shadow ls/head/sed.
+# brew and port are invoked by absolute path.
 unsetopt aliases
 unalias -m '*' 2>/dev/null || true
 PATH=/usr/bin:/bin:/usr/sbin:/sbin
-[[ -d /usr/local/bin ]] && PATH="$PATH:/usr/local/bin"
-[[ -d /opt/local/bin ]] && PATH="$PATH:/opt/local/bin"
 export PATH
 hash -r
 
+HERE="${0:A:h}"
 APPLY=0
 APPLY_LOG=""
 DUMPED_LOG=0
@@ -70,7 +70,7 @@ BREW_AS=()
 PORT_AS=()
 if [[ "$(/usr/bin/id -u)" -eq 0 ]]; then
   if [[ -z "${SUDO_USER:-}" || "$SUDO_USER" == "root" ]]; then
-    echo "brew-to-ports: do not run migrate.sh as root. Run as your login user; the script sudo's port only." >&2
+    echo "brew-to-ports: do not run this script as root. Run as your login user; the script sudo's port only." >&2
     exit 1
   fi
   BREW_OWNER="$SUDO_USER"
@@ -126,8 +126,8 @@ if [[ "$APPLY" -eq 0 ]]; then
 else
   echo "APPLY: installs MacPorts ports and uninstalls brew kegs."
   echo "This script does not back up Homebrew. Time Machine, or a copy of /usr/local/{Cellar,Caskroom,Homebrew,etc,var} plus brew bundle dump, first. bin/sbin are mostly symlinks."
-  APPLY_LOG="${HOME}/.brew-to-ports/report-$(/bin/date +%Y-%m-%d).txt"
-  /bin/mkdir -p "${HOME}/.brew-to-ports"
+  APPLY_LOG="${HERE}/logs/report-$(/bin/date +%Y-%m-%d).txt"
+  /bin/mkdir -p "${HERE}/logs"
   {
     echo ""
     echo "===== brew-to-ports apply $(/bin/date '+%Y-%m-%d %H:%M:%S %z') pid=$$ ====="
@@ -153,7 +153,7 @@ def render_script(plan: Plan) -> str:
         path_file = plan.path_advice.path_file
     lines.append(
         "# PATH still prefers brew until you load "
-        + (path_file or "~/.zsh_path.brew-to-ports")
+        + (path_file or "logs/zsh_path")
         + " (see scan report). This script does not edit rc files."
     )
     lines.append("")
@@ -246,26 +246,29 @@ def render_script(plan: Plan) -> str:
 
 def _apply_done_banner(plan: Plan) -> list:
     """Parent TTY cannot be repaired in-place. Say so, with the PATH cutover."""
-    lines = [
-        "cat <<'B2P_DONE'",
+    body = [
         "done.",
         "",
-        "Open a new terminal. This session still hashes brew binaries",
-        "(starship, gnubin, …). hash -r here is not enough if login rc",
-        "still prepends kegs or evals brew shellenv.",
+        "Open a new terminal. This session still hashes brew binaries.",
+        "hash -r here is not enough if login rc still prepends kegs",
+        "or evals brew shellenv.",
     ]
     advice = plan.path_advice
     if advice and advice.path_file:
-        lines.append(f"PATH file: {advice.path_file}")
+        body.append(f"PATH file: {advice.path_file}")
     if advice and advice.comment_out:
-        lines.append("Comment these writers, then restart (or source the PATH file):")
+        body.append("Comment these writers, then restart (or source the PATH file):")
         for item in advice.comment_out:
-            lines.append(f"  {item.path}:{item.lineno}  {item.text}")
+            body.append(f"  {item.path}:{item.lineno}  {item.text}")
     if advice and advice.load_zsh:
-        lines.append("zsh load (after path_helper):")
-        lines.extend(advice.load_zsh.rstrip().splitlines())
-    lines.append("B2P_DONE")
-    return lines
+        body.append("zsh load (after path_helper):")
+        body.extend(advice.load_zsh.rstrip().splitlines())
+    if plan.select_links:
+        body.append("")
+        body.append("Link unversioned runtimes (after the ports are installed):")
+        body.extend(format_select_block(plan.select_links, indent=""))
+    # zsh builtin — never `cat` (user rc often aliases cat to bat).
+    return [f"print -r -- {_sh_single(line)}" for line in body]
 
 
 def _ascii_bar(i: int, n: int, width: int = 20) -> str:

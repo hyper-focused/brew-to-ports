@@ -12,7 +12,7 @@ from brew_to_ports.adapters.os_tools import (
     user_path,
 )
 from brew_to_ports.adapters.shell_env import current_path
-from brew_to_ports.paths import repo_root
+from brew_to_ports.paths import default_path_file, default_scan_log, repo_root, workspace_logs_dir
 
 
 class OsToolsTests(unittest.TestCase):
@@ -39,16 +39,17 @@ class OsToolsTests(unittest.TestCase):
         with patch.dict(os.environ, {USER_PATH_ENV: gnubin, "PATH": "/usr/bin:/bin"}, clear=False):
             self.assertEqual(current_path(), gnubin)
 
-    def test_subprocess_env_drops_gnubin(self):
+    def test_subprocess_env_is_apple_only(self):
         with patch.dict(
             os.environ,
-            {"PATH": "/usr/local/opt/coreutils/libexec/gnubin:/usr/bin"},
+            {"PATH": "/usr/local/opt/coreutils/libexec/gnubin:/usr/local/bin:/opt/local/bin:/usr/bin"},
             clear=False,
         ):
-            env = subprocess_env("/usr/local/bin")
-        self.assertTrue(env["PATH"].startswith(OS_PATH))
+            env = subprocess_env()
+        self.assertEqual(env["PATH"], OS_PATH)
         self.assertNotIn("gnubin", env["PATH"])
-        self.assertIn("/usr/local/bin", env["PATH"])
+        self.assertNotIn("/usr/local/bin", env["PATH"])
+        self.assertNotIn("/opt/local/bin", env["PATH"])
 
     def test_brew_uses_intel_binary_not_path_which(self):
         with patch("brew_to_ports.adapters.brew.os.path.isfile", return_value=False):
@@ -60,8 +61,8 @@ class OsToolsTests(unittest.TestCase):
             argv = chk.call_args[0][0]
             self.assertEqual(argv[0], INTEL_BREW)
             env = chk.call_args.kwargs["env"]
-            self.assertTrue(env["PATH"].startswith(OS_PATH))
-            self.assertNotIn("gnubin", env["PATH"])
+            self.assertEqual(env["PATH"], OS_PATH)
+            self.assertNotIn("/usr/local/bin", env["PATH"])
 
     def test_load_installed_json_requires_intel_brew(self):
         with patch("brew_to_ports.adapters.brew.os.path.isfile", return_value=False):
@@ -74,6 +75,20 @@ class OsToolsTests(unittest.TestCase):
         self.assertIn("unsetopt aliases", wrapper)
         self.assertIn("BREW_TO_PORTS_USER_PATH", wrapper)
         self.assertIn("PATH=/usr/bin:/bin:/usr/sbin:/sbin", wrapper)
+        self.assertNotIn('PATH="$PATH:/usr/local/bin"', wrapper)
+        self.assertNotIn('PATH="$PATH:/opt/local/bin"', wrapper)
         self.assertIn("hash -r", wrapper)
         self.assertNotIn("command -v brew", wrapper)
         self.assertIn("/usr/local/bin/brew", wrapper)
+        self.assertIn('ROOT="${0:A:h}"', wrapper)
+        self.assertNotIn("dirname", wrapper)
+
+    def test_scan_path_and_logs_live_in_cwd_logs(self):
+        from datetime import date
+        from pathlib import Path
+
+        root = Path("/tmp/b2p-ws")
+        logs = workspace_logs_dir(root)
+        self.assertEqual(logs, root / "logs")
+        self.assertEqual(default_scan_log(date(2026, 9, 7), root), logs / "scan-2026-09-07.txt")
+        self.assertEqual(default_path_file(root), logs / "zsh_path")

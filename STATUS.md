@@ -1,6 +1,6 @@
 # Status
 
-Intel Homebrew → MacPorts planner. Scan is read-only. `migrate.sh --apply` is the only mutator. Waves: scan → apply → scan again.
+Intel Homebrew → MacPorts planner. Scan is read-only. `migrate.zsh --apply` is the only mutator. Waves: scan → apply → scan again.
 
 ## Shipped
 
@@ -13,7 +13,7 @@ Intel Homebrew → MacPorts planner. Scan is read-only. `migrate.sh --apply` is 
 - `--allow-older-same-major`
 - Privileges: never `sudo brew`; one `sudo -v` for MacPorts; keepalive + `sudo -n`
 - `--apply` reminds: Time Machine or a copy of Cellar/Homebrew/etc/var first (not just bin/sbin)
-- PATH dump to a sibling file; does not edit rc
+- PATH dump to `logs/zsh_path`; scan/apply logs in `logs/`; does not edit rc
 - Custom brew confs listed with paths (vendor baseline vs live; bottle owns the file); not copied
 - Tests: `PYTHONPATH=src python3 -m unittest discover -s tests -q`
 
@@ -42,7 +42,8 @@ Remaining keep-set after python + same-major + try-source on the author’s cell
 | `classify.py` | initial Decision (runtime/toolchain/service stay exception) |
 | `family.py` | runtime + direct dependents; can/drop/blocked (python/php/node) |
 | `cutover.py` | `CutoverChoice`; TTY + flags |
+| `select.py` | `port select --set` for php/python/pip (newest) |
 | `source_try.py` | overlay Portfile text + shape |
 | `plan.py` | keep-set, cutover overlay, try-source overlay, ops |
 | `config_scan.py` | brew conf inventory; custom vs vendor baseline; never copies |
-| `render/script.py` | migrate.sh (dry-run default) |
+| `render/script.py` | migrate.zsh (dry-run default) |

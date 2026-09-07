@@ -7,11 +7,25 @@ from pathlib import Path
 from typing import List, Sequence, Tuple
 
 from brew_to_ports.adapters.shell_env import sourced_paths
+from brew_to_ports.paths import default_path_file
 from brew_to_ports.models import PathAdvice, PathLine
 
 INTEL_BREW_BIN = "/usr/local/bin"
 INTEL_BREW_SBIN = "/usr/local/sbin"
 ARM_BREW_BIN = "/opt/homebrew/bin"
+
+# Apple's own dirs. /usr/local/bin is in /etc/paths on many Macs and is NOT Apple —
+# path_helper putting it first is the brew-wins-login-shell trap.
+APPLE_PATHS = (
+    "/usr/bin",
+    "/bin",
+    "/usr/sbin",
+    "/sbin",
+)
+APPLE_PATHS_OPTIONAL = (
+    "/System/Cryptexes/App/usr/bin",
+    "/Library/Apple/usr/bin",
+)
 
 # Real PATH mutation — not fpath=(, not comments.
 _PATH_ARRAY_RE = re.compile(r"(?m)^[ \t]*path=\(")
@@ -24,23 +38,22 @@ _LINKER_RE = re.compile(
     r"(?m)^[ \t]*(?:export[ \t]+)?(?:LDFLAGS|CPPFLAGS|PKG_CONFIG_PATH)="
 )
 _MACPORTS_INSTALLER_RE = re.compile(r"MacPorts Installer addition")
-# `eval "$(starship init zsh)"` / `eval "$(direnv hook zsh)"` — PATH-dependent hooks.
+# `eval "$(name init …)"` / `eval "$(name hook …)"` — PATH-dependent hooks.
 _EVAL_HOOK_RE = re.compile(
     r"""eval[ \t]+(?:\"\$\(|'\$\()[ \t]*(?P<cmd>[A-Za-z0-9._-]+)[ \t]+(?:init|hook)\b"""
 )
 _ABS_BREW_CMD_RE = re.compile(r"(?:/usr/local|/opt/homebrew)/bin/([A-Za-z0-9._+-]+)")
 
 # Keg trees before /usr/local/bin so we don't half-rewrite /usr/local/opt/...
-_KEG_GNUBIN_RE = re.compile(r"/usr/local/opt/[^/]+/libexec/gnubin")
+# gnubin exists to shadow Apple; suggest /usr/bin, not MacPorts gnubin.
+_KEG_GNUBIN_RE = re.compile(
+    r"/usr/local/opt/[^/]+/libexec/gnubin(?:/([^\s\"']+))?"
+)
 _KEG_BIN_RE = re.compile(r"/usr/local/opt/[^/]+/bin")
 _KEG_SBIN_RE = re.compile(r"/usr/local/opt/[^/]+/sbin")
 _KEG_LIB_RE = re.compile(r"/usr/local/opt/[^/]+/lib")
 _KEG_INC_RE = re.compile(r"/usr/local/opt/[^/]+/include")
 _KEG_SHARE_RE = re.compile(r"/usr/local/opt/[^/]+/share")
-
-
-def default_path_file(home: Path | None = None) -> Path:
-    return (home or Path.home()) / ".zsh_path.brew-to-ports"
 
 
 def suggest_path(
@@ -59,22 +72,22 @@ def suggest_path(
     brew_bin = f"{brew_prefix}/bin"
     brew_sbin = f"{brew_prefix}/sbin"
 
-    head = []
-    for item in (ports_bin, ports_sbin):
-        if item not in head:
-            head.append(item)
-    rest = [p for p in entries if p not in head]
+    apple = _apple_paths()
+    head = [ports_bin, ports_sbin]
+    skip = set(head) | set(apple) | {brew_bin, brew_sbin}
+    rest = [p for p in entries if p not in skip]
     for brew_item in (brew_bin, brew_sbin):
-        if brew_item in rest:
-            rest = [p for p in rest if p != brew_item]
-            rest.append(brew_item)
-        elif brew_item not in rest and Path(brew_item).exists():
+        if brew_item in entries or Path(brew_item).exists():
             rest.append(brew_item)
 
-    suggested = ":".join(head + rest)
+    suggested = ":".join(head + apple + rest)
     analysis = _analyze_rc(rc_files or [])
 
     notes: List[str] = []
+    helper = _path_helper_note()
+    if helper:
+        notes.append(helper)
+        analysis["extra_writers"].append("/etc/zprofile: path_helper (login shells; prepends /etc/paths)")
     if analysis["path_owners"]:
         notes.append(f"owner: {', '.join(analysis['path_owners'])} ({analysis['idiom'] or 'unknown'})")
     if analysis["alias_hits"]:
@@ -88,7 +101,9 @@ def suggest_path(
     if analysis["idiom"] == "zsh-array":
         for path, text in rc_files or []:
             if str(path) in analysis["path_owners"]:
-                array_entries = _rewrite_zsh_array(text, ports_bin, ports_sbin)
+                array_entries = _rewrite_zsh_array(
+                    text, ports_bin, ports_sbin, brew_bin, brew_sbin, apple
+                )
                 break
     if not array_entries:
         array_entries = [_zsh_path_entry(p) for p in suggested.split(":") if p]
@@ -226,30 +241,71 @@ def _analyze_rc(rc_files: Sequence[Tuple[Path, str]]) -> dict:
 _PATH_ARRAY_BODY_RE = re.compile(r"(?ms)^[ \t]*path=\((.*?)\)")
 
 
-def _rewrite_zsh_array(text: str, ports_bin: str, ports_sbin: str) -> List[str]:
-    """Rebuild the owner's path=(...) with MacPorts near the top. Keep $path at the end."""
+def _apple_paths() -> List[str]:
+    out = list(APPLE_PATHS)
+    for item in APPLE_PATHS_OPTIONAL:
+        if Path(item).is_dir():
+            out.append(item)
+    return out
+
+
+def _path_helper_note() -> str:
+    zprofile = Path("/etc/zprofile")
+    try:
+        text = zprofile.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    if "path_helper" not in text:
+        return ""
+    return (
+        "/etc/zprofile runs path_helper on login shells and prepends /etc/paths "
+        "(/usr/local/bin is first on many Macs). Re-load logs/zsh_path in .zprofile "
+        "AFTER that. Do not edit /etc/zprofile."
+    )
+
+
+def _rewrite_zsh_array(
+    text: str,
+    ports_bin: str,
+    ports_sbin: str,
+    brew_bin: str,
+    brew_sbin: str,
+    apple: Sequence[str],
+) -> List[str]:
+    """User bins, MacPorts, Apple system dirs, leftovers, brew last. No $path — file is complete."""
     match = _PATH_ARRAY_BODY_RE.search(text)
     if not match:
-        return [ports_bin, ports_sbin]
+        return [ports_bin, ports_sbin, *apple]
     cleaned: List[str] = []
-    skip = {ports_bin, ports_sbin, ports_bin + "/", ports_sbin + "/"}
+    skip = {
+        ports_bin,
+        ports_sbin,
+        brew_bin,
+        brew_sbin,
+        *(p.rstrip("/") for p in apple),
+    }
     for line in match.group(1).splitlines():
         entry = line.split("#", 1)[0].strip()
         if not entry or entry in ("$path", "path"):
             continue
-        if entry.rstrip("/") in skip or entry in skip:
+        norm = _norm_entry(entry) if entry.startswith("/") else entry
+        if norm in skip or entry.rstrip("/") in skip:
             continue
-        if entry.startswith("/"):
-            cleaned.append(_norm_entry(entry))
-        else:
-            cleaned.append(entry)
+        cleaned.append(norm if entry.startswith("/") else entry)
     insert_at = 0
     for i, entry in enumerate(cleaned):
         if entry.startswith("$HOME") or entry.startswith("~"):
             insert_at = i + 1
             continue
         break
-    return cleaned[:insert_at] + [ports_bin, ports_sbin] + cleaned[insert_at:]
+    user = cleaned[:insert_at]
+    middle = cleaned[insert_at:]
+    brew = []
+    if Path(brew_bin).exists() or brew_bin in text:
+        brew.append(brew_bin)
+    if Path(brew_sbin).exists() or brew_sbin in text:
+        brew.append(brew_sbin)
+    return user + [ports_bin, ports_sbin] + list(apple) + middle + brew
 
 
 def _keep_path_entry(entry: str) -> bool:
@@ -262,6 +318,8 @@ def _keep_path_entry(entry: str) -> bool:
 def _path_file_contents(abs_entries: List[str]) -> str:
     lines = [
         "# brew-to-ports PATH — one directory per line; load via scan report one-liners",
+        "# Login shells: /etc/zprofile path_helper prepends /etc/paths first.",
+        "# Load this file again in ~/.zprofile after that so MacPorts stays ahead of brew.",
         "",
     ]
     seen = set()
@@ -305,7 +363,7 @@ def _comment_out_lines(
             owner_resolved.add(Path(raw).expanduser().resolve())
         except OSError:
             continue
-    dedicated = {".zsh_path", ".path", ".env", ".zsh_path.brew-to-ports"}
+    dedicated = {".zsh_path", ".path", ".env", ".zsh_path.brew-to-ports", "zsh_path"}
     home = home or Path.home()
     found: List[PathLine] = []
     for path, text in rc_files:
@@ -349,10 +407,16 @@ def _comment_out_lines(
     return found
 
 
+def _apple_gnubin(match: re.Match) -> str:
+    rest = match.group(1) or ""
+    cmd = rest.rsplit("/", 1)[-1] if rest else ""
+    return f"/usr/bin/{cmd}" if cmd else "/usr/bin"
+
+
 def rewrite_brew_prefix(text: str, ports_prefix: str = "/opt/local") -> str:
-    """Map common Homebrew prefix/keg paths onto MacPorts. Not complete."""
+    """Map brew prefixes. gnubin aliases → Apple /usr/bin, not ports gnubin."""
     s = text
-    s = _KEG_GNUBIN_RE.sub(f"{ports_prefix}/libexec/gnubin", s)
+    s = _KEG_GNUBIN_RE.sub(_apple_gnubin, s)
     s = _KEG_BIN_RE.sub(f"{ports_prefix}/bin", s)
     s = _KEG_SBIN_RE.sub(f"{ports_prefix}/sbin", s)
     s = _KEG_LIB_RE.sub(f"{ports_prefix}/lib", s)

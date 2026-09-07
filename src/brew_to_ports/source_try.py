@@ -39,7 +39,9 @@ class TryRecipe:
 
 
 def default_overlay_root() -> Path:
-    return Path.home() / ".brew-to-ports" / "overlay"
+    from brew_to_ports.paths import workspace_logs_dir
+
+    return workspace_logs_dir() / "overlay"
 
 
 def recipe_for(pkg: Package) -> Optional[TryRecipe]:

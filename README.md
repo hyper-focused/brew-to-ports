@@ -30,10 +30,10 @@ This runs on the Intel Mac being migrated. Not Apple Silicon, not Linux, not mac
 
 **Catalog**
 - MacPorts PortIndex: live install **or** `--portindex FILE`
-- MacPorts is optional to *plan*. `migrate.sh --apply` needs MacPorts at `/opt/local` and `sudo` for `port install`.
+- MacPorts is optional to *plan*. `migrate.zsh --apply` needs MacPorts at `/opt/local` and `sudo` for `port install`.
 - Intel Tahoe: MacPorts’ x86_64-26 bottle set is incomplete; more ports will build from source. The planner does not care.
 
-Ventura is the floor because Apple CLT Python is 3.9 from 13 on (Monterey CLT was 3.8.9) and the [current MacPorts tree](https://www.macports.org) targets 13+. Tahoe is Apple’s last Intel macOS; 27+ is Apple Silicon only and already fails the Intel gate. No extra Tahoe code path. The wrapper and generated `migrate.sh` pin `/bin/zsh` and `/usr/bin/python3` so uninstalling brew’s copies cannot kill the migrator. That is not a recommendation to *live* on Apple’s Python.
+Ventura is the floor because Apple CLT Python is 3.9 from 13 on (Monterey CLT was 3.8.9) and the [current MacPorts tree](https://www.macports.org) targets 13+. Tahoe is Apple’s last Intel macOS; 27+ is Apple Silicon only and already fails the Intel gate. No extra Tahoe code path. The wrapper and generated `migrate.zsh` pin `/bin/zsh` and `/usr/bin/python3` so uninstalling brew’s copies cannot kill the migrator. That is not a recommendation to *live* on Apple’s Python.
 
 Audience: people who already live in a terminal. The matcher and PATH scanner do what they can. They will not catch every keg, GNU `g-` prefix, variant, or homemade rc graph. Read the report.
 
@@ -50,11 +50,11 @@ No pip dependencies. Python 3.9+ stdlib only.
 
 ## Usage
 
-The scan is read-only. Do not expect `./brew-to-ports` to `brew uninstall` anything. `migrate.sh --apply` is the only mutator; it already runs `brew autoremove` at the **end**.
+The scan is read-only. Do not expect `./brew-to-ports` to `brew uninstall` anything. `migrate.zsh --apply` is the only mutator; it already runs `brew autoremove` at the **end**.
 
-**Before `--apply`:** this tool does not back up Homebrew. Take a Time Machine backup of the Mac, **or** copy `/usr/local/{Cellar,Caskroom,Homebrew,etc,var}` plus `brew bundle dump` and the cask apps under `/Applications`. `bin`/`sbin` are mostly Cellar symlinks — they are not a backup. Then dry-run `./migrate.sh` and only then `--apply`.
+**Before `--apply`:** this tool does not back up Homebrew. Take a Time Machine backup of the Mac, **or** copy `/usr/local/{Cellar,Caskroom,Homebrew,etc,var}` plus `brew bundle dump` and the cask apps under `/Applications`. `bin`/`sbin` are mostly Cellar symlinks — they are not a backup. Then dry-run `./migrate.zsh` and only then `--apply`.
 
-Run the planner and `migrate.sh` as **your login user**, never `sudo ./migrate.sh`. Homebrew owns `/usr/local` and your launchd services; `sudo brew` is how you get a root-owned cellar. The script `sudo`s **only** `port` (`selfupdate` / `install`). `--apply` asks for your sudo password **once** (`sudo -v`) and keeps the ticket alive; it does not store the password. Later `port` calls use `sudo -n` (fail if the ticket died, no 76 prompts). If you do `sudo ./migrate.sh` anyway, it drops `brew` back to `$SUDO_USER` and refuses if it cannot tell who that is. Casks such as XQuartz write `/opt/X11` or `/Applications` and need root to uninstall. `brew` (as you) invokes `sudo` for that; we still never `sudo brew`. The same `--apply` ticket is refreshed before the uninstall phase so that is not a second password storm.
+Run the planner and `migrate.zsh` as **your login user**, never `sudo ./migrate.zsh`. Homebrew owns `/usr/local` and your launchd services; `sudo brew` is how you get a root-owned cellar. The script `sudo`s **only** `port` (`selfupdate` / `install`). `--apply` asks for your sudo password **once** (`sudo -v`) and keeps the ticket alive; it does not store the password. Later `port` calls use `sudo -n` (fail if the ticket died, no 76 prompts). If you do `sudo ./migrate.zsh` anyway, it drops `brew` back to `$SUDO_USER` and refuses if it cannot tell who that is. Casks such as XQuartz write `/opt/X11` or `/Applications` and need root to uninstall. `brew` (as you) invokes `sudo` for that; we still never `sudo brew`. The same `--apply` ticket is refreshed before the uninstall phase so that is not a second password storm.
 
 **Before you scan** (optional hygiene — you run these, not the planner):
 
@@ -63,23 +63,26 @@ brew autoremove --dry-run    # orphans: unrequested, nothing still needs them
 brew cleanup --dry-run       # old kegs + cache, not installed formulae
 ```
 
-If that list is junk, run them for real, **then** scan. If it names something you still invoke by PATH, leave it. `installed_on_request` lies. Repeat: scan → apply → scan again. One `migrate.sh` is a snapshot of this cellar; keep-set is computed from who still has a brew reason to live.
+If that list is junk, run them for real, **then** scan. If it names something you still invoke by PATH, leave it. `installed_on_request` lies. Repeat: scan → apply → scan again. One `migrate.zsh` is a snapshot of this cellar; keep-set is computed from who still has a brew reason to live.
 
 ```sh
-./brew-to-ports                          # scan (read-only)
-./brew-to-ports --script --commands --path-file
-./migrate.sh                             # dry-run
-./migrate.sh --apply                     # the only mutator
-./brew-to-ports --script                 # wave 2, after the cellar changed
+./brew-to-ports                          # scan, write migrate.zsh, offer dry-run
+./brew-to-ports --no-script              # scan log only
+./migrate.zsh --apply                    # the only mutator
+./brew-to-ports                          # wave 2, after the cellar changed
 ```
 
-`--path-file` writes `~/.zsh_path.brew-to-ports` (one directory per line). The report lists `source` / `export PATH` / `brew shellenv` lines to comment, plus zsh/bash load one-liners. It does not edit rc files.
+On a TTY, after writing `migrate.zsh`, it asks to dry-run now (`[Y/n]`, Enter = yes). That is still a dry-run — no installs. `--apply` is the only mutator. Non-TTY prints the dry-run command instead of prompting.
+
+Scan TTY is a summary (migrate / drop / exception + requested keep, plus `port select --set` for php/python3/pip3). Generated files stay in the working directory: `logs/scan-YYYY-MM-DD.txt` (full dump), `logs/report-YYYY-MM-DD.txt` (`--apply` log), `logs/zsh_path` (PATH data). `--report FILE` / `--path-file FILE` override. `--commands` prints copy/paste commands after the summary.
+
+`--path-file` writes `logs/zsh_path` (one directory per line). The scan log lists `source` / `export PATH` / `brew shellenv` lines to comment, plus zsh/bash load one-liners. It does not edit rc files.
 
 `--allow-older-same-major` opts in to MacPorts ports that are older but the same major as the brew formula.
 
 On a TTY, python / php / node families get `[m]igrate` / `[s]kip` / `[q]uit` (then `yes` if anything would be deleted). `q` writes nothing. Non-TTY stays dual-stack unless `--migrate-runtime python@3.13` (repeat for `php`, `node@22`, …) and `--i-acked-drop` when unmatched children would be dropped. php uninstall still needs `--i-acked-config php` (php.ini). Ruby is not offered — left as a brew dep. php/node older-same-major only appear with `--allow-older-same-major`.
 
-`--try-source` / `--allow-try-source` is for brew kegs **built from source** that have no MacPorts equivalent: overlay Portfiles (github noarch, Go, autoreconf) under `~/.brew-to-ports/overlay` and `port -D` install. A real port match still wins. Bottled kegs stay on brew. cmake/rust/PyPI/mysql are not attempted. Failed overlay install leaves the brew keg. Does not edit `sources.conf`.
+`--try-source` / `--allow-try-source` is for brew kegs **built from source** that have no MacPorts equivalent: overlay Portfiles (github noarch, Go, autoreconf) under `logs/overlay` and `port -D` install. A real port match still wins. Bottled kegs stay on brew. cmake/rust/PyPI/mysql are not attempted. Failed overlay install leaves the brew keg. Does not edit `sources.conf`.
 
 `--brew-json FILE` / `--portindex FILE` run against dumps (useful for tests and for machines that cannot talk to the PortIndex).
 
@@ -93,7 +96,7 @@ On a TTY, python / php / node families get `[m]igrate` / `[s]kip` / `[q]uit` (th
 - PATH advice from `.zshenv` / `.zprofile` / sourced files under `$HOME` (not antidote/Cellar).
 - Custom brew config files listed with a guessed MacPorts path (not copied). Stock bottle / `.default` / php.ini-production copies are omitted.
 - Best-effort `/usr/local` → `/opt/local` rewrites for aliases and `LDFLAGS`/`CPPFLAGS`.
-- Generated `migrate.sh`: dry-run default, restart-safe skips, `brew services stop` before uninstall, `brew autoremove` at the end. `sudo` only `port`.
+- Generated `migrate.zsh`: dry-run default, restart-safe skips, `brew services stop` before uninstall, `brew autoremove` at the end. `sudo` only `port`.
 
 ## What it will not do
 

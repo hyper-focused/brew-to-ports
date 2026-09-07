@@ -18,11 +18,16 @@ class PathTests(unittest.TestCase):
         parts = advice.suggested.split(":")
         self.assertEqual(parts[0], "/opt/local/bin")
         self.assertEqual(parts[1], "/opt/local/sbin")
+        self.assertIn("/usr/bin", parts)
+        self.assertIn("/bin", parts)
+        self.assertIn("/usr/sbin", parts)
+        self.assertIn("/sbin", parts)
         self.assertIn("/usr/local/bin", parts)
-        self.assertGreater(parts.index("/usr/local/bin"), parts.index("/opt/local/bin"))
+        self.assertGreater(parts.index("/usr/bin"), parts.index("/opt/local/bin"))
+        self.assertGreater(parts.index("/usr/local/bin"), parts.index("/usr/bin"))
         self.assertNotIn("/opt/local/bin/", parts)
         text = snippet(advice)
-        self.assertIn("brew-to-ports", text)
+        self.assertIn("PATH file:", text)
         self.assertIn("Comment:", text)
 
     def test_rc_hits(self):
@@ -103,13 +108,29 @@ class PathTests(unittest.TestCase):
             self.assertIn("source_owner", kinds)
             self.assertIn("/opt/local/bin", advice.path_file_contents)
             self.assertIn("/opt/local/sbin", advice.path_file_contents)
-            self.assertNotIn("/usr/bin", advice.path_file_contents)
+            self.assertIn("/usr/bin", advice.path_file_contents)
+            self.assertIn("/bin", advice.path_file_contents)
+            self.assertGreater(
+                advice.path_file_contents.index("/usr/bin"),
+                advice.path_file_contents.index("/opt/local/bin"),
+            )
             text = snippet(advice)
             self.assertIn("path=(", text)
             self.assertIn(".zsh_path.brew-to-ports", text)
             self.assertIn("$path", advice.load_zsh)
             self.assertTrue(any(r.kind == "alias" and "/opt/local/bin/bat" in (r.suggested or "") for r in advice.rewrites))
             self.assertIn("/opt/local/bin/bat", text)
+
+    def test_path_helper_note_when_etc_zprofile_exists(self):
+        if not Path("/etc/zprofile").is_file():
+            self.skipTest("no /etc/zprofile")
+        text = Path("/etc/zprofile").read_text(encoding="utf-8", errors="replace")
+        if "path_helper" not in text:
+            self.skipTest("path_helper not in /etc/zprofile")
+        advice = suggest_path("/usr/bin:/bin", rc_files=[])
+        self.assertTrue(any("path_helper" in n for n in advice.notes))
+        self.assertTrue(any("path_helper" in w for w in advice.extra_writers))
+        self.assertFalse(any("/etc/zprofile" in (c.path or "") for c in advice.comment_out))
 
     def test_vanished_keg_paths_omitted_from_path_file(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -179,7 +200,7 @@ class PathTests(unittest.TestCase):
         )
         self.assertEqual(
             rewrite_brew_prefix('alias head="/usr/local/opt/coreutils/libexec/gnubin/head"'),
-            'alias head="/opt/local/libexec/gnubin/head"',
+            'alias head="/usr/bin/head"',
         )
         self.assertEqual(
             rewrite_brew_prefix('export LDFLAGS="-L/usr/local/opt/ruby/lib"'),

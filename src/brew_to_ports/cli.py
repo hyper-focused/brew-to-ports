@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import List, Optional, Sequence, Tuple
 
 from brew_to_ports.adapters.brew import BrewError, brew_prefix, load_installed_json, python_is_from_brew
-from brew_to_ports.adapters.macports import load_catalog, ports_prefix
+from brew_to_ports.adapters.macports import load_catalog, load_select_summary, ports_prefix
 from brew_to_ports.adapters.shell_env import current_path, read_rc_files
 from brew_to_ports.catalog import Catalog, from_portindex_text
 from brew_to_ports.classify import classify_all
@@ -19,11 +19,13 @@ from brew_to_ports.config_scan import scan_configs
 from brew_to_ports.cutover import CutoverAbort, decide_cutover
 from brew_to_ports.family import cutover_families
 from brew_to_ports.inventory import from_brew_json
-from brew_to_ports.path_suggest import default_path_file, suggest_path
+from brew_to_ports.path_suggest import suggest_path
+from brew_to_ports.paths import default_path_file, default_scan_log
 from brew_to_ports.plan import build_plan
+from brew_to_ports.select import runtime_select_links
 from brew_to_ports.source_try import default_overlay_root
 from brew_to_ports.render.commands import render_commands
-from brew_to_ports.render.report import render_report
+from brew_to_ports.render.report import render_report, render_summary
 from brew_to_ports.render.script import render_script
 
 
@@ -106,11 +108,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--script",
         nargs="?",
-        const="migrate.sh",
+        const="migrate.zsh",
+        default="migrate.zsh",
         metavar="FILE",
-        help="write migrate.sh (default path migrate.sh). Script still defaults to dry-run.",
+        help="path for the apply script (default: write migrate.zsh). Dry-run until --apply.",
     )
-    parser.add_argument("--report", metavar="FILE", help="also write the human report to FILE")
+    parser.add_argument(
+        "--no-script",
+        action="store_true",
+        help="do not write migrate.zsh (scan log only)",
+    )
+    parser.add_argument(
+        "--report",
+        metavar="FILE",
+        help="write the full scan log to FILE (default ./logs/scan-YYYY-MM-DD.txt)",
+    )
     parser.add_argument("--brew-json", metavar="FILE", help="read brew info --json=v2 from FILE instead of live brew")
     parser.add_argument("--portindex", metavar="FILE", help="read MacPorts PortIndex from FILE")
     parser.add_argument(
@@ -123,13 +135,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="allow running under Homebrew's Python (not recommended)",
     )
-    parser.add_argument("--commands", action="store_true", help="print copy/paste commands after the report")
+    parser.add_argument("--commands", action="store_true", help="print copy/paste commands after the summary")
     parser.add_argument(
         "--path-file",
         nargs="?",
         const=str(default_path_file()),
         metavar="FILE",
-        help="write generated PATH file (default ~/.zsh_path.brew-to-ports). Also written with --script.",
+        help="write generated PATH file (default ./logs/zsh_path). Also written with migrate.zsh.",
     )
     parser.add_argument(
         "--migrate-runtime",
@@ -155,7 +167,7 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "if a brew keg was built from source and has no MacPorts equivalent, "
             "write an overlay Portfile and plan port -D install "
-            "(default ~/.brew-to-ports/overlay). Bottled kegs stay on brew."
+            "(default ./logs/overlay). Bottled kegs stay on brew."
         ),
     )
     return parser
@@ -204,23 +216,51 @@ def main(argv: Optional[List[str]] = None) -> int:
     except CutoverAbort as exc:
         print(str(exc) or "brew-to-ports: cutover aborted; wrote nothing.", file=sys.stderr)
         return 2
-    report = render_report(plan)
-    sys.stdout.write(report)
-    if args.report:
-        Path(args.report).write_text(report, encoding="utf-8")
-    if args.commands or args.script:
+    full = render_report(plan)
+    log_path = Path(args.report).expanduser() if args.report else default_scan_log()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as fh:
+        fh.write(f"\n===== brew-to-ports scan {host_macos} =====\n")
+        fh.write(full)
+    sys.stdout.write(render_summary(plan, log_path=str(log_path)))
+    if args.commands:
         sys.stdout.write("\n")
         sys.stdout.write(render_commands(plan))
-    if args.script:
+    write_script = bool(args.script) and not args.no_script
+    if write_script:
         script_path = Path(args.script)
         script_path.write_text(render_script(plan), encoding="utf-8")
         script_path.chmod(script_path.stat().st_mode | 0o111)
-        print(f"\nwrote {script_path} (dry-run by default; pass --apply to mutate)", file=sys.stderr)
-    if args.script or args.path_file:
+        print(f"wrote {script_path} (dry-run until --apply)", file=sys.stderr)
+    if write_script or args.path_file:
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(plan.path_advice.path_file_contents if plan.path_advice else "", encoding="utf-8")
         print(f"wrote {dest} (PATH data file — comment rc writers and load it)", file=sys.stderr)
+    if write_script:
+        _offer_dry_run(Path(args.script))
     return 0
+
+
+def _offer_dry_run(script_path: Path) -> None:
+    """TTY: offer to run the generated script without --apply. Never mutates."""
+    shown = str(script_path)
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        print(f"Dry-run: /bin/zsh {shown}    then {shown} --apply when it looks right.", file=sys.stderr)
+        return
+    sys.stderr.write(f"Dry-run {shown} now? [Y/n] ")
+    sys.stderr.flush()
+    try:
+        raw = sys.stdin.readline()
+    except KeyboardInterrupt:
+        sys.stderr.write("\n")
+        print(f"Skipped. Review with: /bin/zsh {shown}", file=sys.stderr)
+        return
+    key = (raw or "").strip().lower()
+    if key in ("n", "no", "q", "quit"):
+        print(f"Skipped. Review with: /bin/zsh {shown}", file=sys.stderr)
+        return
+    print(f"--> dry-run {shown} (no packages will be installed or uninstalled)", file=sys.stderr)
+    subprocess.run(["/bin/zsh", shown])
 
 
 def run_scan(
@@ -273,6 +313,8 @@ def run_scan(
         path_file=path_file,
         migrated_cmds=migrated_cmds,
     )
+    port_names = [op.port_name for op in plan.ops if op.port_name]
+    plan.select_links = runtime_select_links(port_names, load_select_summary())
     return plan
 
 

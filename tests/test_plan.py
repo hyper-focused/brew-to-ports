@@ -2,9 +2,12 @@ import os
 import subprocess
 import unittest
 
+from pathlib import Path
+
 from brew_to_ports.cli import run_scan
 from brew_to_ports.models import STATUS_EXCEPTION, STATUS_KEEP, STATUS_MIGRATE
 from brew_to_ports.render.commands import render_commands
+from brew_to_ports.render.report import render_report, render_summary
 from brew_to_ports.render.script import render_script
 from support import brew_payload, catalog, write_portindex_sample
 
@@ -51,6 +54,81 @@ class PlanSliceTests(unittest.TestCase):
         self.assertIn("wget", names)
         self.assertNotIn("openssl@3", names)
         self.assertNotIn("git", names)
+
+    def test_tty_summary_skips_keep_set_dump(self):
+        summary = render_summary(self.plan, log_path="/tmp/scan.txt")
+        full = render_report(self.plan)
+        self.assertIn("migrate ", summary)
+        self.assertIn("KEEP ON BREW", summary)
+        self.assertIn("log: /tmp/scan.txt", summary)
+        self.assertNotIn("KEEP-SET", summary)
+        self.assertNotIn("keep_because_dep_of_keeper", summary)
+        self.assertIn("KEEP-SET", full)
+        self.assertIn("keep_because_dep_of_keeper", full)
+        self.assertLess(len(summary), len(full))
+
+    def test_summary_lists_port_select_commands(self):
+        from brew_to_ports.models import SelectLink
+
+        self.plan.select_links = [
+            SelectLink(group="php", option="php84", selected="none"),
+            SelectLink(group="python3", option="python314", selected="python314"),
+        ]
+        text = render_summary(self.plan)
+        self.assertIn("sudo port select --set php php84", text)
+        self.assertIn("sudo port select --set python3 python314", text)
+        self.assertIn("# already", text)
+
+    def test_script_written_by_default(self):
+        from brew_to_ports.cli import build_parser
+
+        ns = build_parser().parse_args([])
+        self.assertEqual(ns.script, "migrate.zsh")
+        self.assertFalse(ns.no_script)
+        ns = build_parser().parse_args(["--no-script"])
+        self.assertTrue(ns.no_script)
+        ns = build_parser().parse_args(["--script", "foo.zsh"])
+        self.assertEqual(ns.script, "foo.zsh")
+
+    def test_offer_dry_run_skips_when_not_a_tty(self):
+        from io import StringIO
+        from unittest.mock import patch
+
+        from brew_to_ports.cli import _offer_dry_run
+
+        err = StringIO()
+        with patch("brew_to_ports.cli.sys.stdin") as inf, patch(
+            "brew_to_ports.cli.sys.stdout"
+        ) as out, patch("brew_to_ports.cli.sys.stderr", err), patch(
+            "brew_to_ports.cli.subprocess.run"
+        ) as run:
+            inf.isatty.return_value = False
+            out.isatty.return_value = True
+            _offer_dry_run(Path("migrate.zsh"))
+        run.assert_not_called()
+        self.assertIn("Dry-run:", err.getvalue())
+        self.assertIn("--apply", err.getvalue())
+
+    def test_offer_dry_run_enter_runs_without_apply(self):
+        from io import StringIO
+        from unittest.mock import patch
+
+        from brew_to_ports.cli import _offer_dry_run
+
+        err = StringIO()
+        with patch("brew_to_ports.cli.sys.stdin") as inf, patch(
+            "brew_to_ports.cli.sys.stdout"
+        ) as out, patch("brew_to_ports.cli.sys.stderr", err), patch(
+            "brew_to_ports.cli.subprocess.run"
+        ) as run:
+            inf.isatty.return_value = True
+            out.isatty.return_value = True
+            inf.readline.return_value = "\n"
+            _offer_dry_run(Path("migrate.zsh"))
+        run.assert_called_once()
+        argv = run.call_args[0][0]
+        self.assertEqual(argv, ["/bin/zsh", "migrate.zsh"])
+        self.assertNotIn("--apply", argv)
 
     def test_migrating_parent_does_not_pin_its_brew_dep(self):
         """A migrates; unrequested B was only a brew dep of A → B is leftover, not keep."""
@@ -331,11 +409,16 @@ class PlanSliceTests(unittest.TestCase):
         self.assertIn("exec /bin/zsh", script)
         self.assertIn("unsetopt aliases", script)
         self.assertIn("PATH=/usr/bin:/bin:/usr/sbin:/sbin", script)
+        self.assertNotIn('PATH="$PATH:/usr/local/bin"', script)
+        self.assertNotIn('PATH="$PATH:/opt/local/bin"', script)
         self.assertIn("hash -r", script)
         self.assertIn("/bin/sleep 30", script)
         self.assertIn("/bin/kill", script)
         self.assertIn("Open a new terminal", script)
-        self.assertIn("B2P_DONE", script)
+        self.assertNotIn("starship", script)
+        self.assertIn("print -r --", script)
+        self.assertNotIn("B2P_DONE", script)
+        self.assertNotIn("/bin/cat <<", script)
         self.assertIn("/usr/bin/uname -m", script)
         self.assertIn("x86_64", script)
         self.assertIn("/usr/bin/sw_vers", script)
@@ -368,7 +451,20 @@ class PlanSliceTests(unittest.TestCase):
         self.assertNotIn('run "$SUDO" "$BREW"', script)
         self.assertIn("ensure_sudo", script)
         self.assertIn('uninstall --cask', script)
-        self.assertIn("${HOME}/.brew-to-ports/report-", script)
+        self.assertIn('HERE="${0:A:h}"', script)
+        self.assertIn("/bin/date", script)
+        self.assertIn("/bin/mkdir", script)
+        self.assertIn("/bin/sleep", script)
+        self.assertIn("/bin/kill", script)
+        self.assertIn("/usr/bin/tee", script)
+        self.assertIn("/usr/bin/tail", script)
+        self.assertIn("/usr/bin/sudo", script)
+        self.assertNotIn("\ncat ", script)
+        self.assertNotIn("\nls ", script)
+        self.assertNotIn("\nsed ", script)
+        self.assertNotIn("\nhead ", script)
+        self.assertNotIn("\ngrep ", script)
+        self.assertIn("${HERE}/logs/report-", script)
         self.assertIn("/bin/date +%Y-%m-%d", script)
         self.assertIn("log: $APPLY_LOG", script)
         self.assertIn("run_logged", script)

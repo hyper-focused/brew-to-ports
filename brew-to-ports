@@ -7,18 +7,17 @@ if [[ -z "${BREW_TO_PORTS_SYS_ZSH:-}" ]]; then
   exec /bin/zsh "$0" "$@"
 fi
 
-# User gnubin/aliases (bat-as-cat, coreutils, …) are not this process's runtime.
-# Stash the launch PATH so the planner can still report what the shell uses.
+# Apple system PATH only. gnubin / keg / ports bins are not this process's
+# runtime. brew and port are invoked by absolute path. Stash the launch PATH
+# so the planner can still report what the user's shell uses.
 unsetopt aliases
 unalias -m '*' 2>/dev/null || true
 export BREW_TO_PORTS_USER_PATH="${BREW_TO_PORTS_USER_PATH:-$PATH}"
 PATH=/usr/bin:/bin:/usr/sbin:/sbin
-[[ -d /usr/local/bin ]] && PATH="$PATH:/usr/local/bin"
-[[ -d /opt/local/bin ]] && PATH="$PATH:/opt/local/bin"
 export PATH
 hash -r
 
-ROOT="$(cd "$(dirname "$0")" && pwd)"
+ROOT="${0:A:h}"
 export PYTHONPATH="${ROOT}/src${PYTHONPATH:+:$PYTHONPATH}"
 
 if [[ "$(/usr/bin/id -u)" -eq 0 ]]; then

@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from typing import Dict, Optional
 
-# BSD/Apple tools. No gnubin, no keg, no /opt/local/libexec.
+# Apple system PATH only. No gnubin, no keg, no /usr/local/bin, no /opt/local/bin.
 OS_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
 INTEL_BREW = "/usr/local/bin/brew"
 INTEL_BREW_BIN = "/usr/local/bin"

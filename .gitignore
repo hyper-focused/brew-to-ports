@@ -14,9 +14,12 @@ build/
 .cache/
 *.journal.json
 
-# Generated apply scripts (user-local)
+# Generated apply scripts and logs (cwd)
+/logs/
 /migrate.sh
+/migrate.zsh
 /brew-to-ports-migrate.sh
+/brew-to-ports-migrate.zsh
 /brew-to-ports.path
 /.zsh_path.brew-to-ports
 

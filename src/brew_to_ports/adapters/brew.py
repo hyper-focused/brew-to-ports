@@ -8,7 +8,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from brew_to_ports.adapters.os_tools import INTEL_BREW, INTEL_BREW_BIN, subprocess_env
+from brew_to_ports.adapters.os_tools import INTEL_BREW, subprocess_env
 
 
 class BrewError(RuntimeError):
@@ -23,7 +23,7 @@ def brew_prefix() -> str:
             [INTEL_BREW, "--prefix"],
             text=True,
             stderr=subprocess.DEVNULL,
-            env=subprocess_env(INTEL_BREW_BIN),
+            env=subprocess_env(),
         )
         return out.strip() or "/usr/local"
     except (OSError, subprocess.CalledProcessError):
@@ -40,7 +40,7 @@ def load_installed_json(path: Optional[Path] = None) -> Dict[str, Any]:
             [INTEL_BREW, "info", "--json=v2", "--installed"],
             text=True,
             stderr=subprocess.PIPE,
-            env=subprocess_env(INTEL_BREW_BIN),
+            env=subprocess_env(),
         )
     except subprocess.CalledProcessError as exc:
         err = (exc.stderr or "").strip()
