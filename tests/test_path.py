@@ -111,6 +111,65 @@ class PathTests(unittest.TestCase):
             self.assertTrue(any(r.kind == "alias" and "/opt/local/bin/bat" in (r.suggested or "") for r in advice.rewrites))
             self.assertIn("/opt/local/bin/bat", text)
 
+    def test_vanished_keg_paths_omitted_from_path_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            zsh_path = home / ".zsh_path"
+            zsh_path.write_text(
+                "path=(\n"
+                "  $HOME/.local/bin\n"
+                "  /usr/local/opt/coreutils/libexec/gnubin\n"
+                "  /usr/local/opt/not-a-real-keg-xyz/bin\n"
+                "  /usr/local/bin\n"
+                "  $path\n"
+                ")\n",
+                encoding="utf-8",
+            )
+            advice = suggest_path(
+                "/usr/bin",
+                rc_files=[(zsh_path, zsh_path.read_text())],
+                home=home,
+                path_file=home / ".zsh_path.brew-to-ports",
+            )
+            self.assertNotIn("gnubin", advice.path_file_contents)
+            self.assertNotIn("not-a-real-keg-xyz", advice.path_file_contents)
+            self.assertIn("/usr/local/bin", advice.path_file_contents)
+            self.assertIn(str(home / ".local/bin"), advice.path_file_contents)
+
+    def test_eval_hook_rewritten_only_when_migrated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            zshrc = Path(tmp) / ".zshrc"
+            zshrc.write_text(
+                'eval "$(starship init zsh)"\n'
+                'eval "$(direnv hook zsh)"\n'
+                'export EDITOR="/usr/local/bin/nano"\n'
+                "source /usr/local/opt/antidote/share/antidote/antidote.zsh\n",
+                encoding="utf-8",
+            )
+            advice = suggest_path(
+                "/usr/bin",
+                rc_files=[(zshrc, zshrc.read_text())],
+                migrated_cmds=["starship", "nano"],
+            )
+            kinds = {r.kind: r for r in advice.rewrites}
+            self.assertEqual(
+                kinds["hook"].suggested,
+                'eval "$(/opt/local/bin/starship init zsh)"',
+            )
+            self.assertEqual(
+                kinds["bin"].suggested,
+                'export EDITOR="/opt/local/bin/nano"',
+            )
+            self.assertFalse(any("direnv" in (r.text or "") for r in advice.rewrites))
+            self.assertFalse(any("antidote" in (r.text or "") for r in advice.rewrites))
+
+    def test_eval_hook_untouched_without_migrated_cmds(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            zshrc = Path(tmp) / ".zshrc"
+            zshrc.write_text('eval "$(starship init zsh)"\n', encoding="utf-8")
+            advice = suggest_path("/usr/bin", rc_files=[(zshrc, zshrc.read_text())])
+            self.assertFalse(any(r.kind == "hook" for r in advice.rewrites))
+
     def test_prefix_swap_keg_and_linker(self):
         from brew_to_ports.path_suggest import rewrite_brew_prefix
 

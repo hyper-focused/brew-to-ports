@@ -262,12 +262,16 @@ def run_scan(
         try_source_root=try_source_root,
     )
     plan.configs = scan_configs(packages, plan.decisions, brew_pfx, ports_pfx)
+    migrated_cmds = [
+        op.brew_name for op in plan.ops if op.action == "brew_uninstall" and op.brew_name
+    ]
     plan.path_advice = suggest_path(
         path_env if path_env is not None else current_path(),
         rc_files if rc_files is not None else read_rc_files(),
         brew_prefix=brew_pfx,
         ports_prefix=ports_pfx,
         path_file=path_file,
+        migrated_cmds=migrated_cmds,
     )
     return plan
 

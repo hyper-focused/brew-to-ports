@@ -7,6 +7,17 @@ if [[ -z "${BREW_TO_PORTS_SYS_ZSH:-}" ]]; then
   exec /bin/zsh "$0" "$@"
 fi
 
+# User gnubin/aliases (bat-as-cat, coreutils, …) are not this process's runtime.
+# Stash the launch PATH so the planner can still report what the shell uses.
+unsetopt aliases
+unalias -m '*' 2>/dev/null || true
+export BREW_TO_PORTS_USER_PATH="${BREW_TO_PORTS_USER_PATH:-$PATH}"
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+[[ -d /usr/local/bin ]] && PATH="$PATH:/usr/local/bin"
+[[ -d /opt/local/bin ]] && PATH="$PATH:/opt/local/bin"
+export PATH
+hash -r
+
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 export PYTHONPATH="${ROOT}/src${PYTHONPATH:+:$PYTHONPATH}"
 
@@ -33,8 +44,6 @@ resolved="$("$SYS_PY" -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "
 brew_prefix=""
 if [[ -x /usr/local/bin/brew ]]; then
   brew_prefix="$(/usr/local/bin/brew --prefix 2>/dev/null || true)"
-elif command -v brew >/dev/null 2>&1; then
-  brew_prefix="$(brew --prefix 2>/dev/null || true)"
 fi
 if [[ -n "$brew_prefix" && "$resolved" == "$brew_prefix"* ]]; then
   echo "brew-to-ports: $SYS_PY resolves into Homebrew ($resolved). Refusing." >&2

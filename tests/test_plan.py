@@ -1,3 +1,5 @@
+import os
+import subprocess
 import unittest
 
 from brew_to_ports.cli import run_scan
@@ -5,6 +7,12 @@ from brew_to_ports.models import STATUS_EXCEPTION, STATUS_KEEP, STATUS_MIGRATE
 from brew_to_ports.render.commands import render_commands
 from brew_to_ports.render.script import render_script
 from support import brew_payload, catalog, write_portindex_sample
+
+
+def _zsh(*args, **kwargs):
+    if not os.path.isfile("/bin/zsh"):
+        raise unittest.SkipTest("/bin/zsh not installed")
+    return subprocess.run(["/bin/zsh", *args], **kwargs)
 
 
 class PlanSliceTests(unittest.TestCase):
@@ -36,7 +44,7 @@ class PlanSliceTests(unittest.TestCase):
 
     def test_commands_include_wget_not_vscode(self):
         text = render_commands(self.plan)
-        self.assertIn("sudo port install wget", text)
+        self.assertIn("sudo port -N install wget", text)
         self.assertNotIn("port install visual-studio-code", text)
         uninstalls = [op for op in self.plan.ops if op.action == "brew_uninstall"]
         names = [op.brew_name for op in uninstalls]
@@ -98,6 +106,45 @@ class PlanSliceTests(unittest.TestCase):
         self.assertIn("wget", uninstalls)
         self.assertIn("libfoo", uninstalls)
         self.assertEqual(uninstalls.index("wget") < uninstalls.index("libfoo"), True)
+
+    def test_only_newest_nodejs_is_installed(self):
+        from brew_to_ports.models import Decision, KIND_FORMULA, Match, Package
+        from brew_to_ports.plan import build_plan
+
+        def pkg(name):
+            return Package(
+                name=name, version="1", kind=KIND_FORMULA, origin="brew", requested=True
+            )
+
+        def dec(name, port):
+            return Decision(
+                brew_name=name,
+                status=STATUS_MIGRATE,
+                match=Match(
+                    brew_name=name,
+                    port_name=port,
+                    confidence="versioned",
+                    rule_id="versioned",
+                    version_delta="equal",
+                ),
+                reasons=[],
+                requested=True,
+                category="runtime",
+            )
+
+        plan = build_plan(
+            [pkg("node@22"), pkg("node@24"), pkg("wget")],
+            [dec("node@22", "nodejs22"), dec("node@24", "nodejs24"), dec("wget", "wget")],
+            arch="x86_64",
+            macos="15",
+            brew_prefix="/usr/local",
+            ports_prefix="/opt/local",
+        )
+        installs = [op.port_name for op in plan.ops if op.action == "port_install"]
+        self.assertIn("nodejs24", installs)
+        self.assertNotIn("nodejs22", installs)
+        self.assertIn("wget", installs)
+        self.assertTrue(any("nodejs24" in n and "nodejs22" in n for n in plan.notes))
 
     def test_unrequested_toolchain_exception_not_uninstalled(self):
         from brew_to_ports.models import Decision, KIND_FORMULA, Match, Package
@@ -249,7 +296,7 @@ class PlanSliceTests(unittest.TestCase):
         self.assertEqual(len(uninstalls), 1)
         self.assertEqual(uninstalls[0].kind, KIND_CASK)
         script = render_script(plan)
-        self.assertIn("uninstall_brew transmission cask", script)
+        self.assertIn("uninstall_brew_if_port transmission cask", script)
 
     def test_unrequested_migrate_is_not_a_port_install(self):
         """Regression: KIND_CASK must be imported; this line is skipped for requested formulae."""
@@ -282,6 +329,13 @@ class PlanSliceTests(unittest.TestCase):
         self.assertIn("Time Machine", script)
         self.assertIn("Cellar,Caskroom,Homebrew,etc,var", script)
         self.assertIn("exec /bin/zsh", script)
+        self.assertIn("unsetopt aliases", script)
+        self.assertIn("PATH=/usr/bin:/bin:/usr/sbin:/sbin", script)
+        self.assertIn("hash -r", script)
+        self.assertIn("/bin/sleep 30", script)
+        self.assertIn("/bin/kill", script)
+        self.assertIn("Open a new terminal", script)
+        self.assertIn("B2P_DONE", script)
         self.assertIn("/usr/bin/uname -m", script)
         self.assertIn("x86_64", script)
         self.assertIn("/usr/bin/sw_vers", script)
@@ -289,10 +343,20 @@ class PlanSliceTests(unittest.TestCase):
         self.assertIn("/usr/local/bin/brew", script)
         self.assertIn("/opt/local/bin/port", script)
         self.assertIn("install_port wget", script)
-        self.assertIn("uninstall_brew wget", script)
+        self.assertIn("install phase:", script)
+        self.assertIn("remove phase:", script)
+        self.assertIn("[####################] 1/1", script)
+        self.assertIn("install [", script)
+        self.assertIn("remove [", script)
+        self.assertIn('port_sudo -N install', script)
+        self.assertIn("port_deactivate_conflicts", script)
+        self.assertIn("leaving brew keg", script)
+        self.assertIn("port_sudo -N selfupdate", script)
+        self.assertIn("uninstall_brew_if_port wget formula wget", script)
         self.assertIn("stop_brew_service", script)
         self.assertIn("autoremove_brew", script)
         self.assertIn("already installed", script)
+        self.assertIn('[[ -n "$out" ]]', script)
         self.assertIn("BREW_AS", script)
         self.assertIn("PORT_AS", script)
         self.assertIn("sudo -u", script)
@@ -304,12 +368,69 @@ class PlanSliceTests(unittest.TestCase):
         self.assertNotIn('run "$SUDO" "$BREW"', script)
         self.assertIn("ensure_sudo", script)
         self.assertIn('uninstall --cask', script)
-        import subprocess
-
-        chk = subprocess.run(["/bin/zsh", "-n"], input=script, text=True, capture_output=True)
+        self.assertIn("${HOME}/.brew-to-ports/report-", script)
+        self.assertIn("/bin/date +%Y-%m-%d", script)
+        self.assertIn("log: $APPLY_LOG", script)
+        self.assertIn("run_logged", script)
+        self.assertIn("dump_log_tail", script)
+        self.assertIn("/usr/bin/tail -n 40", script)
+        self.assertIn("tty_port_line", script)
+        self.assertIn('    dep: $pkg', script)
+        self.assertIn("brew-to-ports: interrupted.", script)
+        self.assertIn("on_exit $?", script)
+        chk = _zsh("-n", input=script, text=True, capture_output=True)
         self.assertEqual(chk.returncode, 0, chk.stderr)
-        empty = subprocess.run(
-            ["/bin/zsh", "-c", 'set -u; typeset -a BREW_AS; BREW_AS=(); : "${BREW_AS[@]}"'],
+
+    def test_tty_port_line_shows_each_dep_once(self):
+        script = render_script(self.plan)
+        start = script.index("tty_port_line() {")
+        end = script.index("\nrun_logged() {")
+        zsh = (
+            "TTY_PORT_SHOWN=''\n"
+            "TTY_PORT_TARGET=wget\n"
+            + script[start:end]
+            + "\n"
+            "tty_port_line '---> Fetching archive for zlib'\n"
+            "tty_port_line '---> Configuring zlib'\n"
+            "tty_port_line '---> Building zlib'\n"
+            "tty_port_line '---> Installing zlib @1.3.1_1'\n"
+            "tty_port_line '---> Configuring wget'\n"
+            "tty_port_line '---> Building wget'\n"
+            "tty_port_line 'cc1: error: something exploded'\n"
+        )
+        chk = _zsh("-c", zsh, capture_output=True, text=True)
+        self.assertEqual(chk.returncode, 0, chk.stderr)
+        self.assertEqual(chk.stdout, "    dep: zlib\n")
+
+    def test_dump_log_tail_prints_last_40_once(self):
+        import tempfile
+
+        script = render_script(self.plan)
+        start = script.index("dump_log_tail() {")
+        end = script.index("\non_exit() {")
+        with tempfile.TemporaryDirectory() as tmp:
+            log = os.path.join(tmp, "report-2026-09-07.txt")
+            with open(log, "w", encoding="utf-8") as fh:
+                for i in range(1, 51):
+                    fh.write(f"line-{i}\n")
+            zsh = (
+                f"APPLY_LOG={log!r}\n"
+                "DUMPED_LOG=0\n"
+                + script[start:end]
+                + "\n"
+                "dump_log_tail\n"
+                "dump_log_tail\n"
+            )
+            chk = _zsh("-c", zsh, capture_output=True, text=True)
+        self.assertEqual(chk.returncode, 0, chk.stderr)
+        self.assertIn("last 40 lines", chk.stderr)
+        self.assertIn("line-11", chk.stderr)
+        self.assertNotIn("line-10", chk.stderr)
+        self.assertIn("line-50", chk.stderr)
+        self.assertEqual(chk.stderr.count("end log tail"), 1)
+        empty = _zsh(
+            "-c",
+            'set -u; typeset -a BREW_AS; BREW_AS=(); : "${BREW_AS[@]}"',
             capture_output=True,
             text=True,
         )

@@ -24,6 +24,11 @@ _LINKER_RE = re.compile(
     r"(?m)^[ \t]*(?:export[ \t]+)?(?:LDFLAGS|CPPFLAGS|PKG_CONFIG_PATH)="
 )
 _MACPORTS_INSTALLER_RE = re.compile(r"MacPorts Installer addition")
+# `eval "$(starship init zsh)"` / `eval "$(direnv hook zsh)"` — PATH-dependent hooks.
+_EVAL_HOOK_RE = re.compile(
+    r"""eval[ \t]+(?:\"\$\(|'\$\()[ \t]*(?P<cmd>[A-Za-z0-9._-]+)[ \t]+(?:init|hook)\b"""
+)
+_ABS_BREW_CMD_RE = re.compile(r"(?:/usr/local|/opt/homebrew)/bin/([A-Za-z0-9._+-]+)")
 
 # Keg trees before /usr/local/bin so we don't half-rewrite /usr/local/opt/...
 _KEG_GNUBIN_RE = re.compile(r"/usr/local/opt/[^/]+/libexec/gnubin")
@@ -45,6 +50,7 @@ def suggest_path(
     ports_prefix: str = "/opt/local",
     path_file: Path | None = None,
     home: Path | None = None,
+    migrated_cmds: Sequence[str] | None = None,
 ) -> PathAdvice:
     home = home or Path.home()
     entries = [_norm_entry(p) for p in current_path.split(":") if p]
@@ -88,11 +94,15 @@ def suggest_path(
         array_entries = [_zsh_path_entry(p) for p in suggested.split(":") if p]
 
     dest = path_file or default_path_file(home)
-    abs_entries = [_expand_entry(e, home=home) for e in array_entries]
+    abs_entries = [
+        e
+        for e in (_expand_entry(x, home=home) for x in array_entries)
+        if _keep_path_entry(e)
+    ]
     path_file_contents = _path_file_contents(abs_entries)
     comment_out = _comment_out_lines(rc_files or [], analysis["path_owners"], home=home)
     load_zsh, load_bash = _load_snippets(dest, home=home)
-    rewrites = _prefix_rewrites(rc_files or [], ports_prefix)
+    rewrites = _prefix_rewrites(rc_files or [], ports_prefix, migrated_cmds=migrated_cmds)
 
     return PathAdvice(
         current_path=current_path,
@@ -242,6 +252,13 @@ def _rewrite_zsh_array(text: str, ports_bin: str, ports_sbin: str) -> List[str]:
     return cleaned[:insert_at] + [ports_bin, ports_sbin] + cleaned[insert_at:]
 
 
+def _keep_path_entry(entry: str) -> bool:
+    """Keep reserved user dirs even if missing. Drop vanished brew keg trees."""
+    if "/usr/local/opt/" in entry or "/opt/homebrew/opt/" in entry:
+        return Path(entry).is_dir()
+    return True
+
+
 def _path_file_contents(abs_entries: List[str]) -> str:
     lines = [
         "# brew-to-ports PATH — one directory per line; load via scan report one-liners",
@@ -348,10 +365,23 @@ def rewrite_brew_prefix(text: str, ports_prefix: str = "/opt/local") -> str:
     return s
 
 
+def _migrated_names(migrated_cmds: Sequence[str] | None) -> set:
+    names = set()
+    for raw in migrated_cmds or []:
+        n = raw.strip().lower()
+        if not n:
+            continue
+        names.add(n)
+        names.add(n.split("@")[0])
+    return names
+
+
 def _prefix_rewrites(
     rc_files: Sequence[Tuple[Path, str]],
     ports_prefix: str,
+    migrated_cmds: Sequence[str] | None = None,
 ) -> List[PathLine]:
+    migrated = _migrated_names(migrated_cmds)
     found: List[PathLine] = []
     for path, text in rc_files:
         for lineno, line in enumerate(text.splitlines(), 1):
@@ -361,15 +391,31 @@ def _prefix_rewrites(
             if _EXPORT_PATH_RE.search(line) or _BREW_SHELLENV_RE.search(line):
                 continue
             kind = ""
+            suggested = ""
             if _ALIAS_BREW_RE.search(line):
                 kind = "alias"
+                suggested = rewrite_brew_prefix(stripped, ports_prefix)
             elif _LINKER_RE.search(line) and (
                 "/usr/local" in line or "/opt/homebrew" in line
             ):
                 kind = "linker"
+                suggested = rewrite_brew_prefix(stripped, ports_prefix)
             else:
+                hook = _EVAL_HOOK_RE.search(stripped)
+                if hook and hook.group("cmd").lower() in migrated:
+                    kind = "hook"
+                    cmd = hook.group("cmd")
+                    suggested = stripped.replace(
+                        f"$({cmd} ", f"$({ports_prefix}/bin/{cmd} ", 1
+                    )
+                else:
+                    abs_cmd = _ABS_BREW_CMD_RE.search(stripped)
+                    name = abs_cmd.group(1).lower() if abs_cmd else ""
+                    if name and name in migrated:
+                        kind = "bin"
+                        suggested = rewrite_brew_prefix(stripped, ports_prefix)
+            if not kind:
                 continue
-            suggested = rewrite_brew_prefix(stripped, ports_prefix)
             found.append(
                 PathLine(
                     path=str(path),

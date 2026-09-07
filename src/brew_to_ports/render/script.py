@@ -14,7 +14,19 @@ if [[ -z "${BREW_TO_PORTS_SYS_ZSH:-}" ]]; then
   exec /bin/zsh "$0" "$@"
 fi
 
+# User gnubin/aliases are not this script's runtime. brew/port are absolute;
+# OS dirs stay first so hashed `sleep`/`sed` cannot point at a keg we delete.
+unsetopt aliases
+unalias -m '*' 2>/dev/null || true
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+[[ -d /usr/local/bin ]] && PATH="$PATH:/usr/local/bin"
+[[ -d /opt/local/bin ]] && PATH="$PATH:/opt/local/bin"
+export PATH
+hash -r
+
 APPLY=0
+APPLY_LOG=""
+DUMPED_LOG=0
 typeset -a ACKED
 ACKED=()
 
@@ -82,11 +94,11 @@ if [[ "$APPLY" -eq 1 && "$(/usr/bin/id -u)" -ne 0 ]]; then
       exec </dev/tty
     fi
     while /usr/bin/sudo -n -v >/dev/null 2>&1; do
-      sleep 30
+      /bin/sleep 30
     done
   ) &
   SUDO_KEEP_PID=$!
-  trap '[[ -n "${SUDO_KEEP_PID:-}" ]] && kill "$SUDO_KEEP_PID" 2>/dev/null || true' EXIT INT TERM
+  trap '[[ -n "${SUDO_KEEP_PID:-}" ]] && /bin/kill "$SUDO_KEEP_PID" 2>/dev/null || true' EXIT
   PORT_AS=(/usr/bin/sudo -n)
 fi
 
@@ -105,7 +117,7 @@ run() {
     printf '%q ' "$@"
     printf '\n'
   else
-    "$@"
+    run_logged "$@"
   fi
 }
 
@@ -114,6 +126,13 @@ if [[ "$APPLY" -eq 0 ]]; then
 else
   echo "APPLY: installs MacPorts ports and uninstalls brew kegs."
   echo "This script does not back up Homebrew. Time Machine, or a copy of /usr/local/{Cellar,Caskroom,Homebrew,etc,var} plus brew bundle dump, first. bin/sbin are mostly symlinks."
+  APPLY_LOG="${HOME}/.brew-to-ports/report-$(/bin/date +%Y-%m-%d).txt"
+  /bin/mkdir -p "${HOME}/.brew-to-ports"
+  {
+    echo ""
+    echo "===== brew-to-ports apply $(/bin/date '+%Y-%m-%d %H:%M:%S %z') pid=$$ ====="
+  } >> "$APPLY_LOG"
+  echo "log: $APPLY_LOG"
 fi
 '''
 
@@ -154,27 +173,44 @@ def render_script(plan: Plan) -> str:
             lines.append(f"#   {ch.runtime}: {ch.action}" + (f" drop {', '.join(ch.drop)}" if ch.drop else ""))
         lines.append("")
 
-    lines.append("port_sudo selfupdate")
-    lines.append("")
+    n_inst = len(installs) + len(tries)
+    n_un = len(uninstalls)
 
-    for op in installs:
-        lines.append(f"echo '--> port install {op.port_name} (from brew {op.brew_name})'")
+    lines.append("echo '--> port selfupdate'")
+    lines.append("port_sudo -N selfupdate")
+    lines.append("")
+    if n_inst:
+        lines.append(f"echo '--> install phase: {n_inst} ports'")
+        lines.append("")
+
+    for i, op in enumerate(installs, 1):
+        lines.append(
+            f"echo '--> install {_ascii_bar(i, n_inst)} port {op.port_name} (brew {op.brew_name})'"
+        )
         lines.append(f'install_port {op.port_name}')
         lines.append("")
 
-    for op in tries:
-        lines.append(f"echo '--> try-source {op.port_name} from overlay {op.overlay_dir}'")
+    for j, op in enumerate(tries, 1):
+        i = len(installs) + j
+        lines.append(
+            f"echo '--> install {_ascii_bar(i, n_inst)} try-source {op.port_name} overlay {op.overlay_dir}'"
+        )
         lines.append(f'try_source_port {_sh_single(op.port_name)} {_sh_single(op.overlay_dir)}')
         lines.append("")
 
     if uninstalls:
         lines.append("ensure_sudo")
         lines.append("")
+        lines.append(f"echo '--> remove phase: {n_un} brew kegs'")
+        lines.append("")
 
-    for op in uninstalls:
+    for i, op in enumerate(uninstalls, 1):
         kind = op.kind or "formula"
+        tag = f"remove {_ascii_bar(i, n_un)}"
         if op.hold_uninstall:
-            lines.append(f"echo '--> brew uninstall {op.brew_name} (held until --i-acked-config {op.brew_name})'")
+            lines.append(
+                f"echo '--> {tag} brew {op.brew_name} (held until --i-acked-config {op.brew_name})'"
+            )
             lines.append(f'if acked "{op.brew_name}"; then')
             lines.append(f'  uninstall_brew {op.brew_name} {kind}')
             lines.append("else")
@@ -183,22 +219,61 @@ def render_script(plan: Plan) -> str:
             )
             lines.append("fi")
         elif op.comment.startswith("drop:"):
-            lines.append(f"echo '--> DROP {op.brew_name} (no MacPorts equivalent; not replaced)'")
+            lines.append(f"echo '--> {tag} DROP {op.brew_name} (no MacPorts equivalent)'")
             lines.append(f"uninstall_brew {op.brew_name} {kind}")
         elif op.comment == "try_source":
-            lines.append(f"echo '--> brew uninstall {op.brew_name} (only if overlay port installed)'")
-            lines.append(f'uninstall_brew_if_port {op.brew_name} {kind} {op.port_name}')
+            lines.append(
+                f"echo '--> {tag} brew {op.brew_name} (only if overlay port installed)'"
+            )
+            lines.append(f"uninstall_brew_if_port {op.brew_name} {kind} {op.port_name}")
+        elif op.port_name:
+            lines.append(
+                f"echo '--> {tag} brew {op.brew_name} (only if port {op.port_name} is installed)'"
+            )
+            lines.append(f"uninstall_brew_if_port {op.brew_name} {kind} {op.port_name}")
         else:
-            lines.append(f"echo '--> brew uninstall {op.brew_name}'")
+            lines.append(f"echo '--> {tag} brew {op.brew_name}'")
             lines.append(f"uninstall_brew {op.brew_name} {kind}")
         lines.append("")
 
     lines.append('echo "--> brew autoremove (unrequested leaves brew still sees)"')
     lines.append("autoremove_brew")
     lines.append("")
-    lines.append('echo "done."')
+    lines.extend(_apply_done_banner(plan))
     lines.append("")
     return "\n".join(lines)
+
+
+def _apply_done_banner(plan: Plan) -> list:
+    """Parent TTY cannot be repaired in-place. Say so, with the PATH cutover."""
+    lines = [
+        "cat <<'B2P_DONE'",
+        "done.",
+        "",
+        "Open a new terminal. This session still hashes brew binaries",
+        "(starship, gnubin, …). hash -r here is not enough if login rc",
+        "still prepends kegs or evals brew shellenv.",
+    ]
+    advice = plan.path_advice
+    if advice and advice.path_file:
+        lines.append(f"PATH file: {advice.path_file}")
+    if advice and advice.comment_out:
+        lines.append("Comment these writers, then restart (or source the PATH file):")
+        for item in advice.comment_out:
+            lines.append(f"  {item.path}:{item.lineno}  {item.text}")
+    if advice and advice.load_zsh:
+        lines.append("zsh load (after path_helper):")
+        lines.extend(advice.load_zsh.rstrip().splitlines())
+    lines.append("B2P_DONE")
+    return lines
+
+
+def _ascii_bar(i: int, n: int, width: int = 20) -> str:
+    if n <= 0:
+        filled = 0
+    else:
+        filled = min(width, (width * i) // n)
+    return f"[{'#' * filled}{'-' * (width - filled)}] {i}/{n}"
 
 
 def _sh_single(value: str) -> str:
@@ -206,6 +281,100 @@ def _sh_single(value: str) -> str:
 
 
 HELPERS = r'''
+# Port/brew mutator stdout+stderr → APPLY_LOG. TTY keeps dialogs, the
+# progress bar, and one "dep: name" line when MacPorts starts a dependency.
+# Halt (nonzero exit, INT/TERM, or a skipped failed install) dumps 40 log lines.
+
+dump_log_tail() {
+  [[ "${DUMPED_LOG:-0}" -eq 1 ]] && return 0
+  [[ -n "${APPLY_LOG:-}" && -f "$APPLY_LOG" ]] || return 0
+  DUMPED_LOG=1
+  echo "" >&2
+  echo "----- last 40 lines of $APPLY_LOG -----" >&2
+  /usr/bin/tail -n 40 "$APPLY_LOG" >&2
+  echo "----- end log tail -----" >&2
+}
+
+on_exit() {
+  local rc="$1"
+  [[ -n "${SUDO_KEEP_PID:-}" ]] && /bin/kill "$SUDO_KEEP_PID" 2>/dev/null || true
+  if [[ "$rc" -ne 0 && "$APPLY" -eq 1 ]]; then
+    dump_log_tail
+  fi
+}
+
+trap 'on_exit $?' EXIT
+trap 'echo "brew-to-ports: interrupted." >&2; exit 130' INT
+trap 'echo "brew-to-ports: terminated." >&2; exit 143' TERM
+
+TTY_PORT_SHOWN=""
+TTY_PORT_TARGET=""
+
+tty_port_line() {
+  local line="$1"
+  local pkg=""
+  case "$line" in
+    "---> Fetching archive for "*|\
+    "---> Fetching distfiles for "*|\
+    "---> Computing dependencies for "*|\
+    "---> Verifying checksums for "*|\
+    "---> Applying patches to "*|\
+    "---> Extracting "*|\
+    "---> Configuring "*|\
+    "---> Building "*|\
+    "---> Cleaning "*)
+      pkg="${line##* }"
+      ;;
+    "---> Installing "*)
+      pkg="${line#---> Installing }"
+      pkg="${pkg%% *}"
+      pkg="${pkg%%@*}"
+      ;;
+    "---> Activating "*)
+      pkg="${line#---> Activating }"
+      pkg="${pkg%% *}"
+      pkg="${pkg%%@*}"
+      ;;
+    "---> Staging "*)
+      pkg="${${line#---> Staging }%% *}"
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+  [[ -n "$pkg" ]] || return 0
+  [[ "$pkg" != "$TTY_PORT_SHOWN" ]] || return 0
+  TTY_PORT_SHOWN="$pkg"
+  if [[ -n "$TTY_PORT_TARGET" && "$pkg" == "$TTY_PORT_TARGET" ]]; then
+    return 0
+  fi
+  if [[ -n "$TTY_PORT_TARGET" && "$pkg" != "$TTY_PORT_TARGET" ]]; then
+    echo "    dep: $pkg"
+  else
+    echo "    $pkg"
+  fi
+}
+
+run_logged() {
+  setopt localoptions no_errexit
+  local rc=0
+  if [[ -z "${APPLY_LOG:-}" ]]; then
+    "$@"
+    return $?
+  fi
+  {
+    printf '+ '
+    printf '%q ' "$@"
+    printf '\n'
+  } >> "$APPLY_LOG"
+  TTY_PORT_SHOWN=""
+  "$@" 2>&1 | /usr/bin/tee -a "$APPLY_LOG" | while IFS= read -r line || [[ -n "$line" ]]; do
+    tty_port_line "$line"
+  done
+  rc=${pipestatus[1]}
+  return $rc
+}
+
 sudo_refresh() {
   if [[ "$(/usr/bin/id -u)" -eq 0 ]]; then
     return 0
@@ -240,7 +409,10 @@ port_sudo() {
 
 port_has() {
   # Query as the current uid. Do not wrap this with sudo.
-  "$PORT" -q installed "$1" >/dev/null 2>&1
+  # `port installed NAME` exits 0 even when NAME is not installed; check output.
+  local out
+  out="$("$PORT" -q installed "$1" 2>/dev/null || true)"
+  [[ -n "$out" ]]
 }
 
 brew_has_formula() {
@@ -275,13 +447,50 @@ stop_brew_service() {
   run "${BREW_AS[@]}" "$BREW" services stop "$name" || true
 }
 
+port_is_active() {
+  local out
+  out="$("$PORT" -q installed "$1" 2>/dev/null || true)"
+  [[ "$out" == *"(active)"* ]]
+}
+
+port_deactivate_conflicts() {
+  local name="$1"
+  local raw conf
+  raw="$("$PORT" info --conflicts "$name" 2>/dev/null || true)"
+  raw="${raw##*conflicts:}"
+  raw="${raw//,/ }"
+  for conf in ${=raw}; do
+    [[ -n "$conf" && "$conf" != "$name" ]] || continue
+    if port_is_active "$conf"; then
+      echo "deactivate active $conf (conflicts with $name)"
+      port_sudo -N deactivate "$conf" || true
+    fi
+  done
+}
+
 install_port() {
   local name="$1"
+  TTY_PORT_TARGET="$name"
+  TTY_PORT_SHOWN=""
   if [[ "$APPLY" -eq 1 ]] && port_has "$name"; then
     echo "skip: port $name already installed"
+    TTY_PORT_TARGET=""
     return 0
   fi
-  port_sudo install "$name"
+  if ! port_sudo -N install "$name"; then
+    echo "install $name failed; deactivating MacPorts conflicts and retrying"
+    dump_log_tail
+    DUMPED_LOG=0
+    port_deactivate_conflicts "$name"
+    if ! port_sudo -N install "$name"; then
+      echo "skip: could not install $name (MacPorts conflict); leaving brew keg"
+      dump_log_tail
+      DUMPED_LOG=0
+      TTY_PORT_TARGET=""
+      return 0
+    fi
+  fi
+  TTY_PORT_TARGET=""
   if [[ "$APPLY" -eq 1 ]]; then
     port_has "$name"
   else
@@ -292,18 +501,25 @@ install_port() {
 try_source_port() {
   local name="$1"
   local dir="$2"
+  TTY_PORT_TARGET="$name"
+  TTY_PORT_SHOWN=""
   if [[ "$APPLY" -eq 1 ]] && port_has "$name"; then
     echo "skip: port $name already installed"
+    TTY_PORT_TARGET=""
     return 0
   fi
   if [[ "$APPLY" -eq 1 ]]; then
-    if ! port_sudo -D "$dir" install; then
+    if ! port_sudo -N -D "$dir" install; then
       echo "try-source failed for $name; leaving brew keg in place"
+      dump_log_tail
+      DUMPED_LOG=0
+      TTY_PORT_TARGET=""
       return 0
     fi
   else
     run "${PORT_AS[@]}" "$PORT" -D "$dir" install
   fi
+  TTY_PORT_TARGET=""
 }
 
 uninstall_brew_if_port() {
@@ -311,7 +527,7 @@ uninstall_brew_if_port() {
   local kind="${2:-formula}"
   local portname="${3:-$1}"
   if [[ "$APPLY" -eq 1 ]] && ! port_has "$portname"; then
-    echo "skip: overlay port $portname not installed; leaving brew $name"
+    echo "skip: port $portname not installed; leaving brew $name"
     return 0
   fi
   uninstall_brew "$name" "$kind"

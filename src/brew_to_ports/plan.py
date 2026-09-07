@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Set
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from brew_to_ports.models import (
     CUTOVER_MIGRATE,
@@ -94,6 +94,13 @@ def build_plan(
                 hold_uninstall=decision.hold_uninstall,
                 kind=pkg.kind,
             )
+        )
+
+    ops, node_kept, node_skipped = _collapse_nodejs_installs(ops)
+    if node_skipped:
+        notes.append(
+            "MacPorts nodejs majors conflict (one active); installing "
+            f"{node_kept} only (skipped {', '.join(node_skipped)})"
         )
 
     uninstallable = _uninstall_order(packages, keep_set, decision_map)
@@ -299,3 +306,40 @@ def _uninstall_order(
             ordered.append(name)
             leftover.remove(name)
     return ordered
+
+
+def _nodejs_major(port_name: str) -> Optional[int]:
+    if not port_name.startswith("nodejs"):
+        return None
+    rest = port_name[6:]
+    if rest.isdigit():
+        return int(rest)
+    return None
+
+
+def _collapse_nodejs_installs(
+    ops: List[PlanOp],
+) -> Tuple[List[PlanOp], str, List[str]]:
+    """MacPorts nodejs majors conflict; keep one port_install — the newest."""
+    majors: List[Tuple[int, str]] = []
+    seen: Set[str] = set()
+    for op in ops:
+        if op.action != "port_install":
+            continue
+        n = _nodejs_major(op.port_name)
+        if n is None or op.port_name in seen:
+            continue
+        seen.add(op.port_name)
+        majors.append((n, op.port_name))
+    if len(majors) < 2:
+        return ops, "", []
+    majors.sort()
+    kept = majors[-1][1]
+    skipped = [name for _, name in majors[:-1]]
+    skipset = set(skipped)
+    out = [
+        op
+        for op in ops
+        if not (op.action == "port_install" and op.port_name in skipset)
+    ]
+    return out, kept, skipped

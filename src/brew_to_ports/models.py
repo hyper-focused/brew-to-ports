@@ -90,7 +90,7 @@ class PathLine:
     path: str
     lineno: int
     text: str
-    # source_owner | export | shellenv | alias | linker
+    # source_owner | export | shellenv | alias | linker | hook | bin
     kind: str
     replace_with_load: bool = False
     suggested: str = ""

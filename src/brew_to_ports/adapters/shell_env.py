@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 from typing import List, Set, Tuple
 
+from brew_to_ports.adapters.os_tools import user_path
+
 # zsh: .zshenv runs for every shell (including zsh -c). PATH often lives there.
 RC_NAMES = (
     ".zshenv",
@@ -30,7 +32,7 @@ _SAFE_VARS = ("HOME", "ZDOTDIR")
 
 
 def current_path() -> str:
-    return os.environ.get("PATH") or ""
+    return user_path()
 
 
 def read_rc_files(home: Path | None = None) -> List[Tuple[Path, str]]:

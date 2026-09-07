@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+from brew_to_ports.adapters.os_tools import INTEL_BREW, INTEL_BREW_BIN, subprocess_env
 
 
 class BrewError(RuntimeError):
@@ -15,11 +16,15 @@ class BrewError(RuntimeError):
 
 
 def brew_prefix() -> str:
-    brew = shutil.which("brew")
-    if not brew:
+    if not os.path.isfile(INTEL_BREW):
         return "/usr/local"
     try:
-        out = subprocess.check_output([brew, "--prefix"], text=True, stderr=subprocess.DEVNULL)
+        out = subprocess.check_output(
+            [INTEL_BREW, "--prefix"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            env=subprocess_env(INTEL_BREW_BIN),
+        )
         return out.strip() or "/usr/local"
     except (OSError, subprocess.CalledProcessError):
         return "/usr/local"
@@ -28,14 +33,14 @@ def brew_prefix() -> str:
 def load_installed_json(path: Optional[Path] = None) -> Dict[str, Any]:
     if path is not None:
         return json.loads(Path(path).read_text(encoding="utf-8"))
-    brew = shutil.which("brew")
-    if not brew:
-        raise BrewError("Homebrew not found on PATH. Need `brew info --json=v2 --installed`.")
+    if not os.path.isfile(INTEL_BREW):
+        raise BrewError(f"Homebrew not found at {INTEL_BREW} (Intel prefix). Need `brew info --json=v2 --installed`.")
     try:
         out = subprocess.check_output(
-            [brew, "info", "--json=v2", "--installed"],
+            [INTEL_BREW, "info", "--json=v2", "--installed"],
             text=True,
             stderr=subprocess.PIPE,
+            env=subprocess_env(INTEL_BREW_BIN),
         )
     except subprocess.CalledProcessError as exc:
         err = (exc.stderr or "").strip()

@@ -11,14 +11,14 @@ def render_commands(plan: Plan) -> str:
     uninstalls = [op for op in plan.ops if op.action == "brew_uninstall"]
     lines = [
         "# brew-to-ports",
-        "sudo port selfupdate",
+        "sudo port -N selfupdate",
         "",
     ]
     if installs:
         lines.append("# Install MacPorts equivalents (MacPorts will pull its own deps)")
         for op in installs:
             lines.append(f"# replaces brew {op.brew_name}")
-            lines.append(f"sudo port install {op.port_name}")
+            lines.append(f"sudo port -N install {op.port_name}")
         lines.append("")
         lines.append("# Validate (examples)")
         for op in installs:

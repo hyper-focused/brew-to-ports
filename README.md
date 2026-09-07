@@ -88,7 +88,7 @@ On a TTY, python / php / node families get `[m]igrate` / `[s]kip` / `[q]uit` (th
 - Formulae and casks: requested vs dependency, bottle vs source, keg-only.
 - Match to MacPorts: exact name, aliases, `@version` compact (`php@8.5` → `php85`), stem maps (`python-foo` → `py314-foo`, `node@22` → `nodejs22`, `ruby-`/`perl-`/`r-` modules), homepage family pick (`ffmpeg-full` → `ffmpeg-devel`) only when names share a non-generic stem.
 - Keep-set: requested brew survivors (and casks) pin their brew runtime graph. Unrequested leftovers of migrators can go; MacPorts already pulled what it needs. Service/runtime/toolchain exceptions are not leftover-uninstalled.
-- Python / php / node family cutover (plan-time). Ruby stays on brew.
+- Python / php / node family cutover (plan-time). Ruby stays on brew. MacPorts `nodejsN` majors conflict: only the newest in the cutover set is `port install`ed.
 - `--try-source` / `--allow-try-source`: overlay Portfiles for source-built brew kegs with no port (not cmake/rust/PyPI).
 - PATH advice from `.zshenv` / `.zprofile` / sourced files under `$HOME` (not antidote/Cellar).
 - Custom brew config files listed with a guessed MacPorts path (not copied). Stock bottle / `.default` / php.ini-production copies are omitted.
