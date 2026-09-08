@@ -31,7 +31,7 @@ typeset -a ACKED
 ACKED=()
 
 usage() {
-  echo "usage: $0 [--apply] [--i-acked-config <formula>]..." >&2
+  echo "usage: $0 [--apply] [--config-ack <formula>]..." >&2
   echo "  default is dry-run (prints commands)." >&2
   exit 2
 }
@@ -39,7 +39,7 @@ usage() {
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --apply) APPLY=1 ;;
-    --i-acked-config)
+    --config-ack)
       [[ $# -ge 2 ]] || usage
       ACKED+=("$2")
       shift
@@ -209,13 +209,13 @@ def render_script(plan: Plan) -> str:
         tag = f"remove {_ascii_bar(i, n_un)}"
         if op.hold_uninstall:
             lines.append(
-                f"echo '--> {tag} brew {op.brew_name} (held until --i-acked-config {op.brew_name})'"
+                f"echo '--> {tag} brew {op.brew_name} (held until --config-ack {op.brew_name})'"
             )
             lines.append(f'if acked "{op.brew_name}"; then')
             lines.append(f'  uninstall_brew {op.brew_name} {kind}')
             lines.append("else")
             lines.append(
-                f'  echo "HOLD: {op.brew_name} has config/state; pass --i-acked-config {op.brew_name} to uninstall brew copy"'
+                f'  echo "HOLD: {op.brew_name} has config/state; pass --config-ack {op.brew_name} to uninstall brew copy"'
             )
             lines.append("fi")
         elif op.comment.startswith("drop:"):

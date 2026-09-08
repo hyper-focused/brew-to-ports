@@ -425,7 +425,7 @@ class ConfigScanTests(unittest.TestCase):
             ],
         )
         script = render_script(plan)
-        self.assertIn("--i-acked-config", script)
+        self.assertIn("--config-ack", script)
         self.assertIn("HOLD:", script)
 
 

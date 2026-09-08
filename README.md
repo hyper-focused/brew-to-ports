@@ -1,12 +1,14 @@
-# brew-to-ports
+# Brew to Ports 
 
 **Don't Panic.** 
 
-Homebrew has classified every Intel Mac as [Tier 3](https://docs.brew.sh/Support-Tiers): no new bottles, no CI, and the lights go out around September 2027. Homebrew's own docs point those machines at [MacPorts](https://www.macports.org). This is the towel for that trip.
+So there we were, happily updating runtimes and libraries using brew, when suddenly some text appeared on the screen: Homebrew has classified every Intel Mac as [Tier 3](https://docs.brew.sh/Support-Tiers): no new bottles, no CI, and the lights go out around September 2027. The Vogons have arrived. This app is the towel for that trip.
 
-It first **plans** a Homebrew → MacPorts move. It does **not** silently take any destructive action. Once you're happy with the plan, have done a dry-run, and are feeling lucky, run the generated script as a normal user `migrate.zsh --apply`. Then, go grab a coffee, or a tea if you can find one.
+Homebrew's own docs point those machines at [MacPorts](https://www.macports.org), but migrating dozens or hundreds of packages is... a commitment. 
 
-**Apple Silicon** You don't need this. Homebrew is still Tier 1. Go outside, touch some grass, and enjoy your Mac from **this** decade. Maybe go check out some Norwegian fjords.
+The app initially **plans** a Homebrew → MacPorts move, and generates a migrate.zsh script to execute the change. It does **not** silently take any destructive action. Once you're happy with the plan, have done a dry-run, and are feeling lucky, run the generated script as a normal user `migrate.zsh --apply`. Then, go grab a coffee, or a tea if you can find one.
+
+**Apple Silicon** You don't need this. Homebrew is still Tier 1. Go outside, touch some grass, and enjoy your Mac manufactured **this** decade. Maybe go check out some Norwegian fjords.
 
 ---
 
@@ -42,6 +44,8 @@ brew cleanup --dry-run
 
 # read the summary. then the log. then the dry-run. then:
 ./migrate.zsh --apply
+# if the dry-run HOLDs php.ini (or similar):
+# ./migrate.zsh --apply --config-ack php@8.4
 
 # after it finishes: NEW TERMINAL
 
@@ -67,31 +71,33 @@ This runs **on the Intel Mac being migrated**.
 
 | Must be | Or we refuse |
 |---|---|
-| Intel **x86_64** | Apple Silicon (`uname -m` is not a negotiation) |
+| Intel **x86_64** | Apple Silicon. See fjords, above. |
 | macOS **13 Ventura through 26 Tahoe** | Monterey and older. MacPorts' *current tree* is Ventura+. |
-| Apple `/bin/zsh` | The wrapper re-execs it so brew zsh can die mid-apply |
+| Apple `/bin/zsh` | The wrapper re-execs it so brew zsh can die mid-apply without taking us with it |
 | Xcode CLT; `/usr/bin/python3` **3.9.6+** | That's what Ventura+ CLT ships. No brew Python, no python.org, no venv. `--allow-brew-python` exists as a fire exit, not a plan. |
-| Homebrew at `/usr/local` | Intel prefix. `brew info --json=v2 --installed` must work |
-| MacPorts at `/opt/local` for `--apply` | Optional to *plan* (`--portindex FILE`). Required to mutate |
+| Homebrew at `/usr/local` | Intel prefix. `brew info --json=v2 --installed` has to work |
+| MacPorts at `/opt/local` for `--apply` | Optional to *plan* (`--portindex FILE`). Required if you actually want to move anything |
 
-**Tahoe footnote:** four Intel models still on Apple's list ([support.apple.com/122867](https://support.apple.com/en-us/122867)) — 16" MBP 2019, 13" MBP 2020 (four TB3), 27" iMac 2020, Mac Pro 2019. `sw_vers` says **26**, not 16. MacPorts' x86_64-26 bottles are incomplete; more ports compile from source. The planner does not care. Your fans will.
+**Tahoe:** four Intel models are still on Apple's list ([support.apple.com/122867](https://support.apple.com/en-us/122867)) — 16" MBP 2019, 13" MBP 2020 (four TB3), 27" iMac 2020, Mac Pro 2019. `sw_vers` says **26**, not 16. 
 
-Ventura is the floor because CLT Python is 3.9 from 13 on (Monterey was 3.8.9) and [MacPorts' current tree](https://www.macports.org) targets 13+. Tahoe is the last Intel macOS. 27+ is Apple Silicon and already fails the Intel gate. No extra Tahoe code path.
+Ventura is the floor because CLT Python is 3.9 from 13 on (Monterey was 3.8.9) and [MacPorts' current tree](https://www.macports.org) targets 13+. Tahoe is the last Intel macOS. 27+ is Apple Silicon and already fails the Intel gate. If you remember streaming 'Baby Shark' on this machine when the song was new, you're probably good.
 
-Audience: people who already live in a terminal. We will not catch every GNU `g-` prefix, homemade rc graph, or keg you installed in 2014 and forgot. Read the log.
+This is for people who already live in a terminal. We will not catch every GNU `g-` prefix, homemade rc graph, or keg you installed in 2014 and forgot. Read the log. That's what it's for.
 
 ---
 
 ## How a wave works
 
-1. **Scan** (`./brew-to-ports`) — read-only. Matches cellar → PortIndex. Writes `migrate.zsh`. Offers a dry-run.
-2. **Dry-run** (`./migrate.zsh`, no `--apply`) — prints what it *would* run. Installs nothing.
-3. **Apply** (`./migrate.zsh --apply`) — the only mutator. `port install`, then `brew uninstall` if the port is actually there, then `brew autoremove`.
+Think of this as one trip through the guide, not a rewrite of the planet.
+
+1. **Scan** (`./brew-to-ports.zsh`) — read-only. Matches cellar → PortIndex. Writes `migrate.zsh`. Offers a dry-run.
+2. **Dry-run** (`./migrate.zsh`, no `--apply`) — prints what it *would* run. Installs nothing. This is the "are you feeling lucky" checkpoint.
+3. **Apply** (`./migrate.zsh --apply`) — the only thing that mutates packages. `port install`, then `brew uninstall` if the port is actually there, then `brew autoremove`. If a keg is HOLD (php.ini), apply again with `--config-ack php@8.4`.
 4. **New terminal.** Then `port select`. Then scan again.
 
-One `migrate.zsh` is a snapshot of **this** cellar. Keep-set is "who still has a brew reason to live." After apply, the cellar changed. Scan again. Repeat until migrate=0.
+One `migrate.zsh` is a snapshot of **this** cellar. After apply, the cellar changed. Scan again. Repeat until migrate=0, or until you decide leftover brew is a lifestyle choice.
 
-TTY scan is a **summary** (counts, migrate/drop/exception, requested keep, `port select` lines). The novel goes in `logs/scan-YYYY-MM-DD.txt`. `--apply` logs port/brew spam to `logs/report-YYYY-MM-DD.txt` and keeps a progress bar + current package on screen. On halt, last 40 log lines dump. Success does not.
+The TTY scan is a **summary** — counts, migrate/drop/exception, requested keep, `port select` lines. The novel goes in `logs/scan-YYYY-MM-DD.txt`. `--apply` hides port/brew spam in `logs/report-YYYY-MM-DD.txt` and keeps a progress bar + current package on screen. If it halts, you get the last 40 log lines. If it succeeds, it just… stops. That's the good ending.
 
 ---
 
@@ -103,11 +109,11 @@ The planner and `migrate.zsh` pin:
 PATH=/usr/bin:/bin:/usr/sbin:/sbin
 ```
 
-Aliases off. `hash -r`. `brew` is `/usr/local/bin/brew`. `port` is `/opt/local/bin/port`. `ls`/`head`/`sed`/`date` are Apple. The done banner is zsh `print`, not `cat` (your rc may still say `alias cat=bat` after we uninstall bat).
+Aliases off. `hash -r`. `brew` is `/usr/local/bin/brew`. `port` is `/opt/local/bin/port`. `ls`/`head`/`sed`/`date` are Apple. The done banner is zsh `print`, not `cat`, because your rc may still say `alias cat=bat` after we uninstall bat. `/bin/cat` would have been fine. We still don't want the argument.
 
 **Why:** brew users who wanted Linux put gnubin first and aliased `ls` to `gls`. Then we uninstall coreutils. If our script still said `ls`, it would call a ghost. `/bin/ls` does not ghost.
 
-This is **only** for our process. Your login tab is a child-process problem we cannot fix. `/etc/zprofile` runs `path_helper` on login and prepends `/etc/paths` (often `/usr/local/bin` first). We do **not** edit `/etc/zprofile`. Load `logs/zsh_path` again in `~/.zprofile` **after** that. New terminal. Don't Panic.
+This is **only** for our process. Your login tab is a child-process problem we cannot fix from in here. `/etc/zprofile` runs `path_helper` on login and prepends `/etc/paths` (often `/usr/local/bin` first). We do **not** edit `/etc/zprofile`. Load `logs/zsh_path` again in `~/.zprofile` **after** that. New terminal. Don't Panic.
 
 Generated `logs/zsh_path` order: your `$HOME` bins, MacPorts, Apple system dirs (`/usr/bin` `/bin` `/usr/sbin` `/sbin` + Cryptexes/Library/Apple if present), leftovers, `/usr/local/bin` **last**.
 
@@ -115,21 +121,24 @@ Generated `logs/zsh_path` order: your `$HOME` bins, MacPorts, Apple system dirs 
 
 ## What we will not migrate (or it's a bad idea)
 
+Some of this is "not yet." Some of this is "we already know how that story ends."
+
 | Leave it | Why |
 |---|---|
-| **Apple Silicon** | Wrong planet |
-| **Casks** (iTerm, fonts, …) | Default keep. Aqua cutover is v2 |
+| **Apple Silicon** | Wrong decade. Go outside. |
+| **Casks** (iTerm, fonts, …) | Default keep. Aqua cutover is a later problem |
 | **Ruby** | Never in the cutover prompt. Homebrew's own engine is portable-ruby; the `ruby` formula is still in the leftover brew graph. MacPorts `ruby @1.8.7` is not a joke you want to be in |
-| **gcc / llvm / clang** | Toolchain exception. Dual-stack |
-| **httpd, nginx, mysql, unbound, …** | **Services.** We will not copy `nginx.conf`, databases, or TLS keys. You do that |
-| **ImageMagick 7 vs ports 6, HandBrake 1.x vs 0.10, cmake 4 vs 3** | Older **major**. There is no `--allow-older-major`. On purpose |
-| **Bottled unmatched kegs** | Stay on brew. `--try-source` is only for **source-built** unmatched (github noarch, Go, autoreconf). Not cmake/rust/PyPI/mysql |
-| **pyenv, pydantic, bgpq3, …** | No equivalent above threshold. Keep |
-| **`python-yq` vs `yq`** | We do not `port search` and pray. False migrate is worse than a keep |
+| **gcc / llvm / clang** | Toolchain exception. Dual-stack. Nobody wants a surprise compiler swap mid-migrate |
+| **httpd, nginx, unbound, …** | **Services.** We will not copy `nginx.conf` or TLS keys. You do that, on purpose, with a backup |
+| **MySQL / MariaDB / Percona** | Radioactive. Server, `mysql-client`, connectors, the lot. No migrate, no overlay, no uninstall. We've done the accidental db version upgrade. Not again |
+| **ImageMagick 7 vs ports 6, HandBrake 1.x vs 0.10, cmake 4 vs 3** | Older **major**. There is no `--allow-older-major`. For good reason. |
+| **Bottled unmatched kegs** | Stay on brew. `--try-source` is only for **source-built** unmatched (github noarch, Go, autoreconf). |
+| **pyenv, pydantic, bgpq3, …** | No equivalent above version threshold. Keep |
+| **`python-yq` vs `yq`** | We do not `port search` and pray. If we have a pattern transformation, great. A false migrate is worse than a keep |
 
 **Runtimes we *will* offer:** python, php, node (`[m]/[s]/[q]`). Unmatched children of a migrate need `yes` / `--i-acked-drop`. MacPorts `nodejsN` majors **conflict** — only the newest is `port install`ed. python313+python314 can both be active. php is `php84`/`php85` binaries until you `port select`.
 
-**HOLD / config:** php.ini is stateful. Even after php cutover, brew uninstall of `php@8.4` needs `--i-acked-config php@8.4` on **apply**. Custom brew confs are **listed** (vendor baseline vs live). Stock bottle copies are omitted. Nothing is copied.
+**HOLD / config:** Config files you don't want broken. For example, php.ini is stateful. Even after php cutover, brew uninstall of `php@8.4` needs `--config-ack php@8.4` on **apply**. Custom brew confs are **listed** (vendor baseline vs live). Stock bottle copies are omitted. Nothing is copied.
 
 **Don't sudo the wrapper.** `sudo brew` is how you get a root-owned cellar. We `sudo` **only** `port`. One `sudo -v`, keepalive, then `sudo -n`. Casks that write `/opt/X11` or `/Applications` make *brew* invoke sudo as you; we still never `sudo brew`.
 
@@ -137,7 +146,9 @@ Generated `logs/zsh_path` order: your `$HOME` bins, MacPorts, Apple system dirs 
 
 ## Commands and flags
 
-### `./brew-to-ports` (planner — read-only)
+If the copy-paste block was enough, you can stop here. This is the rest of the remote.
+
+### `./brew-to-ports.zsh` (planner — read-only)
 
 Default: scan, write `migrate.zsh` + `logs/zsh_path`, append `logs/scan-YYYY-MM-DD.txt`, offer dry-run on a TTY.
 
@@ -158,7 +169,7 @@ Default: scan, write `migrate.zsh` + `logs/zsh_path`, append `logs/scan-YYYY-MM-
 | `--allow-brew-python` | Run the planner under Homebrew's Python. Not the supported path |
 | `-h` / `--help` | The short version of this table |
 
-TTY cutover: `[m]igrate` `[s]kip` `[q]uit`, then `yes` if anything would be deleted. `q` writes **nothing**.
+TTY cutover: `[m]igrate` `[s]kip` `[q]uit`, then `yes` if anything would be deleted. `q` writes **nothing**. That's the panic button working as designed.
 
 ### `./migrate.zsh` (the only mutator)
 
@@ -167,7 +178,7 @@ Default is **dry-run**. Prints `DRY-RUN:` lines. Installs nothing.
 | Flag | What it does |
 |---|---|
 | `--apply` | Actually `port install` / `brew uninstall`. Needs sudo for **port** only |
-| `--i-acked-config FORMULA` | Allow uninstall of a HOLD keg (php.ini). Example: `--i-acked-config php@8.4` |
+| `--config-ack FORMULA` | Uninstall a HOLD keg (config you don't want us to surprise-delete). Repeatable. Example: `--config-ack php@8.4` |
 | `-h` / `--help` | Usage |
 
 `--apply` TTY: sudo once, progress bar + current package/`dep: zlib`, port/brew stdout in `logs/report-YYYY-MM-DD.txt`. Halt → last 40 lines. Skip-on-conflict leaves the brew keg and continues. `port -N` so MacPorts doesn't hide a `Continue?` in the pipe. Never `port -q` for installs (`-q` is mute, not logged).
@@ -184,11 +195,13 @@ sudo port select --set pip3 pip314
 
 (Exact lines are in the scan summary; newest option per group. nodejs has no `port select` — the active `nodejsN` *is* `/opt/local/bin/node`.)
 
-Restart-safe: skip if the port is already installed; skip brew uninstall if the mapped port isn't. Re-run `--apply` after a compile failure.
+Restart-safe: skip if the port is already installed; skip brew uninstall if the mapped port isn't. Re-run `--apply` after a compile failure. That's the whole recovery plan. There is no "undo" button, which is why the dry-run exists.
 
 ---
 
 ## Files it writes (working directory, not `$HOME`)
+
+We used to dump PATH advice in `$HOME`. That was cute until it wasn't. Everything now lands in the repo's cwd.
 
 | Path | What |
 |---|---|
@@ -198,16 +211,16 @@ Restart-safe: skip if the port is already installed; skip brew uninstall if the 
 | `logs/zsh_path` | PATH data, one directory per line. **You** source it. We don't edit rc |
 | `logs/overlay/` | try-source Portfiles |
 
-Gitignores `logs/` and `migrate.zsh`. Don't commit your cellar.
+Gitignores `logs/` and `migrate.zsh`. Don't commit your cellar. The universe has enough of those.
 
 ---
 
 ## Layout
 
 ```
-brew-to-ports          # zsh wrapper (Apple zsh + /usr/bin/python3)
+brew-to-ports.zsh      # zsh wrapper (Apple zsh + /usr/bin/python3)
 src/brew_to_ports/     # stdlib Python
-data/aliases.json      # one-off brew → port names (not your aliases)
+data/aliases.json      # one-off brew → port names (not your shell aliases)
 data/exceptions.json   # runtime / toolchain / service / stateful
 tests/                 # fixtures; CI does not need live brew
 STATUS.md              # shipped / not doing / next

@@ -34,7 +34,7 @@ def render_commands(plan: Plan) -> str:
             if op.hold_uninstall:
                 lines.append(
                     f"# HOLD {op.brew_name}: ack config/state first "
-                    f"(./migrate.zsh --apply --i-acked-config {op.brew_name})"
+                    f"(./migrate.zsh --apply --config-ack {op.brew_name})"
                 )
             elif op.comment.startswith("drop:"):
                 lines.append(f"# DROP: no MacPorts equivalent")
